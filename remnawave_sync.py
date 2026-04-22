@@ -6,9 +6,10 @@ import json
 import logging
 import os
 import sys
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Iterator, Mapping, TextIO
 
 import httpx
 from dotenv import load_dotenv
@@ -109,10 +110,48 @@ def bool_to_env(value: bool) -> str:
     return "true" if value else "false"
 
 
+@contextmanager
+def open_console_streams() -> Iterator[tuple[TextIO, TextIO]]:
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        yield sys.stdin, sys.stdout
+        return
+
+    if os.name == "nt":
+        input_target = "CONIN$"
+        output_target = "CONOUT$"
+    else:
+        input_target = "/dev/tty"
+        output_target = "/dev/tty"
+
+    try:
+        console_in = open(input_target, "r", encoding="utf-8", newline="")
+        console_out = open(output_target, "w", encoding="utf-8", newline="")
+    except OSError as exc:
+        raise SyncError(
+            "Interactive setup requires a terminal. Run 'sync-remnawave init' directly in a shell session."
+        ) from exc
+
+    try:
+        yield console_in, console_out
+    finally:
+        console_in.close()
+        console_out.close()
+
+
+def read_prompt_line(prompt: str) -> str:
+    with open_console_streams() as (console_in, console_out):
+        console_out.write(prompt)
+        console_out.flush()
+        line = console_in.readline()
+    if line == "":
+        raise SyncError("Interactive setup was cancelled because no terminal input is available.")
+    return line.rstrip("\r\n")
+
+
 def prompt_text(label: str, default: str | None = None) -> str:
     suffix = f" [{default}]" if default else ""
     while True:
-        value = input(f"{label}{suffix}: ").strip()
+        value = read_prompt_line(f"{label}{suffix}: ").strip()
         if value:
             return value
         if default is not None:
@@ -123,7 +162,11 @@ def prompt_text(label: str, default: str | None = None) -> str:
 def prompt_secret(label: str, has_default: bool = False) -> str:
     suffix = " [saved]" if has_default else ""
     while True:
-        value = getpass.getpass(f"{label}{suffix}: ").strip()
+        try:
+            with open_console_streams() as (_, console_out):
+                value = getpass.getpass(f"{label}{suffix}: ", stream=console_out).strip()
+        except (EOFError, KeyboardInterrupt) as exc:
+            raise SyncError("Interactive setup was cancelled.") from exc
         if value:
             return value
         if has_default:
@@ -134,7 +177,7 @@ def prompt_secret(label: str, has_default: bool = False) -> str:
 def prompt_bool(label: str, default: bool) -> bool:
     suffix = "Y/n" if default else "y/N"
     while True:
-        value = input(f"{label} [{suffix}]: ").strip().lower()
+        value = read_prompt_line(f"{label} [{suffix}]: ").strip().lower()
         if not value:
             return default
         if value in {"y", "yes", "1", "true"}:
@@ -146,7 +189,7 @@ def prompt_bool(label: str, default: bool) -> bool:
 
 def prompt_int(label: str, default: int) -> int:
     while True:
-        value = input(f"{label} [{default}]: ").strip()
+        value = read_prompt_line(f"{label} [{default}]: ").strip()
         if not value:
             return default
         try:
@@ -157,7 +200,7 @@ def prompt_int(label: str, default: int) -> int:
 
 def prompt_float(label: str, default: float) -> float:
     while True:
-        value = input(f"{label} [{default}]: ").strip()
+        value = read_prompt_line(f"{label} [{default}]: ").strip()
         if not value:
             return default
         try:

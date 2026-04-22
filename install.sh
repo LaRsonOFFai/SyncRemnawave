@@ -25,5 +25,11 @@ chmod +x "${BIN_DIR}/sync-remnawave"
 echo
 echo "SyncRemnawave installed."
 echo "If ${BIN_DIR} is not in your PATH, add it first."
-echo "Starting setup wizard..."
-"${VENV_DIR}/bin/sync-remnawave" init
+if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+  echo "Starting setup wizard..."
+  "${VENV_DIR}/bin/sync-remnawave" init </dev/tty >/dev/tty
+else
+  echo "Interactive terminal was not detected."
+  echo "Run this manually to finish setup:"
+  echo "  ${VENV_DIR}/bin/sync-remnawave init"
+fi
