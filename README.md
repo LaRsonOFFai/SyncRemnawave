@@ -43,6 +43,9 @@ Do not add `/api` manually.
 curl -fsSL https://raw.githubusercontent.com/LaRsonOFFai/SyncRemnawave/main/install.sh | bash
 ```
 
+The installer tries to place `remnasync` into `/usr/local/bin` when it has permission.
+If that is not possible, it falls back to `~/.local/bin` and prints the exact command to use.
+
 #### Windows PowerShell
 
 ```powershell
@@ -193,6 +196,9 @@ https://panel-b.example.com
 ```bash
 curl -fsSL https://raw.githubusercontent.com/LaRsonOFFai/SyncRemnawave/main/install.sh | bash
 ```
+
+Установщик пытается положить `remnasync` в `/usr/local/bin`, если на это есть права.
+Если это невозможно, он использует `~/.local/bin` и показывает точную команду для запуска.
 
 #### Windows PowerShell
 
