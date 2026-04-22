@@ -15,13 +15,13 @@ After this repository is published to GitHub, users will be able to install it w
 ### Linux / macOS
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/SyncRemnawave/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/LaRsonOFFai/SyncRemnawave/main/install.sh | bash
 ```
 
 ### Windows PowerShell
 
 ```powershell
-irm https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/SyncRemnawave/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/LaRsonOFFai/SyncRemnawave/main/install.ps1 | iex
 ```
 
 The installer creates a virtual environment, installs the app, and opens the setup wizard where the user enters:
@@ -40,7 +40,7 @@ The installer creates a virtual environment, installs the app, and opens the set
 ### From GitHub
 
 ```bash
-python -m pip install "git+https://github.com/YOUR_GITHUB_USERNAME/SyncRemnawave.git"
+python -m pip install "git+https://github.com/LaRsonOFFai/SyncRemnawave.git"
 sync-remnawave init
 sync-remnawave --dry-run
 sync-remnawave

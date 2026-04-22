@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-$repoUrl = if ($env:SYNCREMNAWAVE_REPO) { $env:SYNCREMNAWAVE_REPO } else { "https://github.com/YOUR_GITHUB_USERNAME/SyncRemnawave.git" }
+$repoUrl = if ($env:SYNCREMNAWAVE_REPO) { $env:SYNCREMNAWAVE_REPO } else { "https://github.com/LaRsonOFFai/SyncRemnawave.git" }
 $installRoot = Join-Path $env:LOCALAPPDATA "SyncRemnawave"
 $venvDir = Join-Path $installRoot "venv"
 $binDir = Join-Path $env:LOCALAPPDATA "Microsoft\\WindowsApps"

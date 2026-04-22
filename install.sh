@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL="${SYNCREMNAWAVE_REPO:-https://github.com/YOUR_GITHUB_USERNAME/SyncRemnawave.git}"
+REPO_URL="${SYNCREMNAWAVE_REPO:-https://github.com/LaRsonOFFai/SyncRemnawave.git}"
 INSTALL_ROOT="${HOME}/.local/share/SyncRemnawave"
 BIN_DIR="${HOME}/.local/bin"
 VENV_DIR="${INSTALL_ROOT}/venv"
