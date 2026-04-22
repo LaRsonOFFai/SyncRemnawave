@@ -222,10 +222,6 @@ def console_encoding() -> str:
 
 @contextmanager
 def open_console_streams() -> Iterator[tuple[TextIO, TextIO]]:
-    if sys.stdin.isatty() and sys.stdout.isatty():
-        yield sys.stdin, sys.stdout
-        return
-
     if os.name == "nt":
         input_target = "CONIN$"
         output_target = "CONOUT$"
@@ -238,8 +234,18 @@ def open_console_streams() -> Iterator[tuple[TextIO, TextIO]]:
         console_in = open(input_target, "r", encoding=encoding, errors="replace", newline="")
         console_out = open(output_target, "w", encoding=encoding, errors="replace", newline="")
     except OSError as exc:
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            try:
+                if hasattr(sys.stdin, "reconfigure"):
+                    sys.stdin.reconfigure(errors="replace")
+                if hasattr(sys.stdout, "reconfigure"):
+                    sys.stdout.reconfigure(errors="replace")
+            except Exception:
+                pass
+            yield sys.stdin, sys.stdout
+            return
         raise SyncError(
-            "Interactive setup requires a terminal. Run 'sync-remnawave init' directly in a shell session."
+            "Interactive setup requires a terminal. Run 'remnasync init' directly in a shell session."
         ) from exc
 
     try:
