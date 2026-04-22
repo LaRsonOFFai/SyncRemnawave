@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "syncremnawave"
+version = "0.1.0"
+description = "One-way Remnawave panel sync with interactive setup wizard"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "httpx>=0.28.1,<1.0",
+  "python-dotenv>=1.0.1,<2.0",
+  "tenacity>=9.0.0,<10.0",
+]
+
+[project.scripts]
+sync-remnawave = "remnawave_sync:main"
+
+[tool.setuptools]
+py-modules = ["remnawave_sync"]
