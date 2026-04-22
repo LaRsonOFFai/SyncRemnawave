@@ -14,11 +14,15 @@ python -m venv $venvDir
 & (Join-Path $venvDir "Scripts\\python.exe") -m pip install --upgrade pip
 & (Join-Path $venvDir "Scripts\\python.exe") -m pip install --upgrade --force-reinstall --no-cache-dir "git+$repoUrl"
 
-$shimPath = Join-Path $binDir "sync-remnawave.cmd"
-$shim = "@echo off`r`n""$venvDir\\Scripts\\sync-remnawave.exe"" %*`r`n"
+$shimPath = Join-Path $binDir "remnasync.cmd"
+$shim = "@echo off`r`n""$venvDir\\Scripts\\remnasync.exe"" %*`r`n"
 Set-Content -Path $shimPath -Value $shim -Encoding ASCII
+
+$compatShimPath = Join-Path $binDir "sync-remnawave.cmd"
+$compatShim = "@echo off`r`n""$venvDir\\Scripts\\remnasync.exe"" %*`r`n"
+Set-Content -Path $compatShimPath -Value $compatShim -Encoding ASCII
 
 Write-Host ""
 Write-Host "SyncRemnawave installed."
 Write-Host "Starting setup wizard..."
-& (Join-Path $venvDir "Scripts\\sync-remnawave.exe") init
+& (Join-Path $venvDir "Scripts\\remnasync.exe") init

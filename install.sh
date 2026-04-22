@@ -16,9 +16,15 @@ python3 -m venv "${VENV_DIR}"
 "${VENV_DIR}/bin/pip" install --upgrade pip
 "${VENV_DIR}/bin/pip" install --upgrade --force-reinstall --no-cache-dir "git+${REPO_URL}"
 
+cat > "${BIN_DIR}/remnasync" <<EOF
+#!/usr/bin/env bash
+exec "${VENV_DIR}/bin/remnasync" "\$@"
+EOF
+chmod +x "${BIN_DIR}/remnasync"
+
 cat > "${BIN_DIR}/sync-remnawave" <<EOF
 #!/usr/bin/env bash
-exec "${VENV_DIR}/bin/sync-remnawave" "\$@"
+exec "${VENV_DIR}/bin/remnasync" "\$@"
 EOF
 chmod +x "${BIN_DIR}/sync-remnawave"
 
@@ -27,9 +33,9 @@ echo "SyncRemnawave installed."
 echo "If ${BIN_DIR} is not in your PATH, add it first."
 if [ -r /dev/tty ] && [ -w /dev/tty ]; then
   echo "Starting setup wizard..."
-  "${VENV_DIR}/bin/sync-remnawave" init </dev/tty >/dev/tty
+  "${VENV_DIR}/bin/remnasync" init </dev/tty >/dev/tty
 else
   echo "Interactive terminal was not detected."
   echo "Run this manually to finish setup:"
-  echo "  ${VENV_DIR}/bin/sync-remnawave init"
+  echo "  ${VENV_DIR}/bin/remnasync init"
 fi

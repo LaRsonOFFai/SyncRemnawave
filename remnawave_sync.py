@@ -6,6 +6,9 @@ import json
 import locale
 import logging
 import os
+import re
+import shlex
+import subprocess
 import sys
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -26,6 +29,94 @@ from tenacity import (
 LOGGER = logging.getLogger("remnawave_sync")
 SOURCE_PANEL_LABEL = "A"
 APP_NAME = "SyncRemnawave"
+TIME_PATTERN = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+
+I18N: dict[str, dict[str, str]] = {
+    "en": {
+        "wizard_title": "SyncRemnawave setup wizard",
+        "wizard_intro": "This will create or update your personal .env config file.",
+        "config_path": "Config path: {path}",
+        "source_url": "Source panel URL",
+        "source_token": "Source JWT or Bearer token",
+        "destination_url": "Destination panel URL",
+        "destination_token": "Destination JWT or Bearer token",
+        "sync_users": "Sync users",
+        "sync_squads": "Sync squads",
+        "sync_nodes": "Sync nodes",
+        "disable_missing": "Disable imported users missing on source",
+        "delete_missing": "Delete imported users missing on source",
+        "page_size": "User page size",
+        "request_timeout": "HTTP request timeout in seconds",
+        "state_file": "State file path",
+        "log_level": "Log level",
+        "language": "Language",
+        "schedule_times": "Sync times separated by spaces in HH:MM format (leave empty to disable cron)",
+        "review_title": "Please review your settings:",
+        "source_token_status": "Source token",
+        "destination_token_status": "Destination token",
+        "saved": "saved",
+        "missing": "missing",
+        "save_configuration": "Save this configuration",
+        "config_not_saved": "Configuration was not saved.",
+        "config_saved": "Configuration saved to: {path}",
+        "run_sync_with": "Run the sync with:",
+        "start_sync_now": "Configuration saved. Start synchronization now",
+        "sync_not_started": "Synchronization was not started. Run 'remnasync --dry-run' when you are ready.",
+        "cron_installed": "Cron schedule installed for: {times}",
+        "cron_removed": "Managed cron schedule removed.",
+        "cron_skipped_windows": "Automatic cron setup is not supported on Windows. The schedule was saved in the config file only.",
+        "cron_unavailable": "Cron could not be configured automatically: {error}",
+        "language_prompt": "Language / Язык [ru/en, default ru]: ",
+        "language_invalid": "Please enter 'ru' or 'en'.",
+        "value_required": "Value is required.",
+        "yes_no": "Please answer yes or no.",
+        "integer_required": "Please enter an integer.",
+        "number_required": "Please enter a number.",
+        "time_invalid": "Invalid time list. Use values like: 03:00 04:00 12:00 23:59",
+    },
+    "ru": {
+        "wizard_title": "Мастер настройки SyncRemnawave",
+        "wizard_intro": "Сейчас будет создан или обновлен ваш личный .env файл.",
+        "config_path": "Путь к конфигу: {path}",
+        "source_url": "URL панели-источника",
+        "source_token": "JWT или Bearer token панели-источника",
+        "destination_url": "URL панели-назначения",
+        "destination_token": "JWT или Bearer token панели-назначения",
+        "sync_users": "Синхронизировать users",
+        "sync_squads": "Синхронизировать squads",
+        "sync_nodes": "Синхронизировать nodes",
+        "disable_missing": "Отключать импортированных пользователей, которых нет на источнике",
+        "delete_missing": "Удалять импортированных пользователей, которых нет на источнике",
+        "page_size": "Размер страницы users",
+        "request_timeout": "Таймаут HTTP-запроса в секундах",
+        "state_file": "Путь к state file",
+        "log_level": "Уровень логов",
+        "language": "Язык",
+        "schedule_times": "Время синхронизации через пробел в формате ЧЧ:ММ (оставьте пустым, чтобы не ставить cron)",
+        "review_title": "Проверьте настройки:",
+        "source_token_status": "Токен источника",
+        "destination_token_status": "Токен назначения",
+        "saved": "сохранен",
+        "missing": "не задан",
+        "save_configuration": "Сохранить эту конфигурацию",
+        "config_not_saved": "Конфигурация не была сохранена.",
+        "config_saved": "Конфигурация сохранена в: {path}",
+        "run_sync_with": "Запуск синхронизации:",
+        "start_sync_now": "Конфигурация сохранена. Запустить синхронизацию сейчас",
+        "sync_not_started": "Синхронизация не была запущена. Когда будете готовы, выполните 'remnasync --dry-run'.",
+        "cron_installed": "Cron расписание установлено на время: {times}",
+        "cron_removed": "Управляемое cron расписание удалено.",
+        "cron_skipped_windows": "Автоматическая настройка cron на Windows не поддерживается. Расписание только сохранено в конфиге.",
+        "cron_unavailable": "Не удалось автоматически настроить cron: {error}",
+        "language_prompt": "Language / Язык [ru/en, по умолчанию ru]: ",
+        "language_invalid": "Введите 'ru' или 'en'.",
+        "value_required": "Значение обязательно.",
+        "yes_no": "Пожалуйста, ответьте yes или no.",
+        "integer_required": "Введите целое число.",
+        "number_required": "Введите число.",
+        "time_invalid": "Неверный список времени. Используйте формат: 03:00 04:00 12:00 23:59",
+    },
+}
 
 
 class SyncError(Exception):
@@ -81,6 +172,11 @@ def default_state_file() -> Path:
     return default_config_dir() / "sync_state.json"
 
 
+def tr(language: str, key: str, **kwargs: Any) -> str:
+    template = I18N.get(language, I18N["ru"]).get(key, key)
+    return template.format(**kwargs)
+
+
 def build_auth_headers(api_key: str) -> dict[str, str]:
     token = api_key.strip()
     if not token:
@@ -109,6 +205,12 @@ def clean_none(data: Mapping[str, Any]) -> dict[str, Any]:
 
 def bool_to_env(value: bool) -> str:
     return "true" if value else "false"
+
+
+def env_escape(value: str) -> str:
+    if any(char.isspace() for char in value) or any(char in value for char in ['#', '"', "'"]):
+        return json.dumps(value)
+    return value
 
 
 def console_encoding() -> str:
@@ -157,7 +259,7 @@ def read_prompt_line(prompt: str) -> str:
     return line.rstrip("\r\n")
 
 
-def prompt_text(label: str, default: str | None = None) -> str:
+def prompt_text(label: str, default: str | None = None, language: str = "ru") -> str:
     suffix = f" [{default}]" if default else ""
     while True:
         value = read_prompt_line(f"{label}{suffix}: ").strip()
@@ -165,10 +267,10 @@ def prompt_text(label: str, default: str | None = None) -> str:
             return value
         if default is not None:
             return default
-        print("Value is required.")
+        print(tr(language, "value_required"))
 
 
-def prompt_secret(label: str, has_default: bool = False) -> str:
+def prompt_secret(label: str, has_default: bool = False, language: str = "ru") -> str:
     suffix = " [saved]" if has_default else ""
     while True:
         try:
@@ -180,10 +282,10 @@ def prompt_secret(label: str, has_default: bool = False) -> str:
             return value
         if has_default:
             return ""
-        print("Value is required.")
+        print(tr(language, "value_required"))
 
 
-def prompt_bool(label: str, default: bool) -> bool:
+def prompt_bool(label: str, default: bool, language: str = "ru") -> bool:
     suffix = "Y/n" if default else "y/N"
     while True:
         value = read_prompt_line(f"{label} [{suffix}]: ").strip().lower()
@@ -193,10 +295,10 @@ def prompt_bool(label: str, default: bool) -> bool:
             return True
         if value in {"n", "no", "0", "false"}:
             return False
-        print("Please answer yes or no.")
+        print(tr(language, "yes_no"))
 
 
-def prompt_int(label: str, default: int) -> int:
+def prompt_int(label: str, default: int, language: str = "ru") -> int:
     while True:
         value = read_prompt_line(f"{label} [{default}]: ").strip()
         if not value:
@@ -204,10 +306,10 @@ def prompt_int(label: str, default: int) -> int:
         try:
             return int(value)
         except ValueError:
-            print("Please enter an integer.")
+            print(tr(language, "integer_required"))
 
 
-def prompt_float(label: str, default: float) -> float:
+def prompt_float(label: str, default: float, language: str = "ru") -> float:
     while True:
         value = read_prompt_line(f"{label} [{default}]: ").strip()
         if not value:
@@ -215,64 +317,191 @@ def prompt_float(label: str, default: float) -> float:
         try:
             return float(value)
         except ValueError:
-            print("Please enter a number.")
+            print(tr(language, "number_required"))
 
 
 def write_env_file(path: Path, values: Mapping[str, str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    content = "\n".join(f"{key}={value}" for key, value in values.items()) + "\n"
+    content = "\n".join(f"{key}={env_escape(value)}" for key, value in values.items()) + "\n"
     path.write_text(content, encoding="utf-8")
 
 
-def print_setup_summary(summary: Mapping[str, str | int | float | bool], config_file: Path) -> None:
+def prompt_language(default_language: str = "ru") -> str:
+    while True:
+        value = read_prompt_line(I18N["ru"]["language_prompt"]).strip().lower()
+        if not value:
+            return default_language
+        if value in {"ru", "en"}:
+            return value
+        print(I18N["ru"]["language_invalid"])
+
+
+def normalize_sync_times(raw_value: str) -> list[str]:
+    value = raw_value.strip()
+    if not value:
+        return []
+    times = value.split()
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in times:
+        if item not in seen:
+            normalized.append(item)
+            seen.add(item)
+    if not all(TIME_PATTERN.match(item) for item in normalized):
+        raise ValueError("invalid time format")
+    return normalized
+
+
+def prompt_sync_times(label: str, default: list[str], language: str) -> list[str]:
+    default_text = " ".join(default)
+    while True:
+        raw_value = read_prompt_line(f"{label}{f' [{default_text}]' if default_text else ''}: ").strip()
+        if not raw_value:
+            return default
+        try:
+            return normalize_sync_times(raw_value)
+        except ValueError:
+            print(tr(language, "time_invalid"))
+
+
+def cron_command(config_file: Path) -> str:
+    executable = Path(sys.argv[0]).expanduser()
+    log_path = config_file.parent / "cron.log"
+    if executable.is_absolute() and executable.exists():
+        base_command = shlex.quote(str(executable))
+    else:
+        base_command = f"{shlex.quote(sys.executable)} {shlex.quote(str(Path(__file__).resolve()))}"
+    return f"{base_command} --config-file {shlex.quote(str(config_file))} >> {shlex.quote(str(log_path))} 2>&1"
+
+
+def update_managed_cron_block(config_file: Path, times: list[str]) -> str:
+    if os.name == "nt":
+        raise SyncError(tr("en", "cron_skipped_windows"))
+
+    try:
+        result = subprocess.run(
+            ["crontab", "-l"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError as exc:
+        raise SyncError("crontab command was not found") from exc
+
+    if result.returncode == 0:
+        existing_lines = result.stdout.splitlines()
+    else:
+        stderr = (result.stderr or "").lower()
+        if "no crontab" in stderr:
+            existing_lines = []
+        else:
+            raise SyncError(result.stderr.strip() or "Failed to read current crontab")
+
+    begin_marker = "# BEGIN SyncRemnawave managed schedule"
+    end_marker = "# END SyncRemnawave managed schedule"
+    filtered_lines: list[str] = []
+    inside_block = False
+    for line in existing_lines:
+        if line == begin_marker:
+            inside_block = True
+            continue
+        if line == end_marker:
+            inside_block = False
+            continue
+        if not inside_block:
+            filtered_lines.append(line)
+
+    if times:
+        command = cron_command(config_file)
+        managed_lines = [begin_marker]
+        for item in times:
+            hour, minute = item.split(":", 1)
+            managed_lines.append(f"{int(minute)} {int(hour)} * * * {command}")
+        managed_lines.append(end_marker)
+        if filtered_lines and filtered_lines[-1] != "":
+            filtered_lines.append("")
+        filtered_lines.extend(managed_lines)
+
+    new_content = "\n".join(filtered_lines).rstrip() + "\n"
+    subprocess.run(["crontab", "-"], input=new_content, text=True, check=True)
+    return "installed" if times else "removed"
+
+
+def maybe_configure_cron(config_file: Path, times: list[str], language: str) -> None:
+    if os.name == "nt":
+        if times:
+            print(tr(language, "cron_skipped_windows"))
+        return
+
+    try:
+        result = update_managed_cron_block(config_file, times)
+    except (SyncError, subprocess.CalledProcessError) as exc:
+        error_text = getattr(exc, "stderr", None) or str(exc)
+        print(tr(language, "cron_unavailable", error=error_text))
+        return
+
+    if result == "installed":
+        print(tr(language, "cron_installed", times=", ".join(times)))
+    else:
+        print(tr(language, "cron_removed"))
+
+
+def print_setup_summary(summary: Mapping[str, str | int | float | bool], config_file: Path, language: str) -> None:
     print()
-    print("Please review your settings:")
-    print(f"  Config file: {config_file}")
-    print(f"  Source URL: {summary['SRC_URL']}")
-    print(f"  Source token: {'saved' if summary['SRC_API_KEY'] else 'missing'}")
-    print(f"  Destination URL: {summary['DST_URL']}")
-    print(f"  Destination token: {'saved' if summary['DST_API_KEY'] else 'missing'}")
-    print(f"  Sync users: {summary['ENABLE_USER_SYNC']}")
-    print(f"  Sync squads: {summary['ENABLE_SQUAD_SYNC']}")
-    print(f"  Sync nodes: {summary['ENABLE_NODE_SYNC']}")
-    print(f"  Disable missing users: {summary['DISABLE_MISSING_USERS']}")
-    print(f"  Delete missing users: {summary['DELETE_MISSING_USERS']}")
-    print(f"  Page size: {summary['PAGE_SIZE']}")
-    print(f"  Request timeout: {summary['REQUEST_TIMEOUT']}")
-    print(f"  State file: {summary['STATE_FILE']}")
-    print(f"  Log level: {summary['LOG_LEVEL']}")
+    print(tr(language, "review_title"))
+    print(f"  {tr(language, 'config_path', path=config_file)}")
+    print(f"  {tr(language, 'source_url')}: {summary['SRC_URL']}")
+    print(f"  {tr(language, 'source_token_status')}: {tr(language, 'saved') if summary['SRC_API_KEY'] else tr(language, 'missing')}")
+    print(f"  {tr(language, 'destination_url')}: {summary['DST_URL']}")
+    print(f"  {tr(language, 'destination_token_status')}: {tr(language, 'saved') if summary['DST_API_KEY'] else tr(language, 'missing')}")
+    print(f"  {tr(language, 'sync_users')}: {summary['ENABLE_USER_SYNC']}")
+    print(f"  {tr(language, 'sync_squads')}: {summary['ENABLE_SQUAD_SYNC']}")
+    print(f"  {tr(language, 'sync_nodes')}: {summary['ENABLE_NODE_SYNC']}")
+    print(f"  {tr(language, 'disable_missing')}: {summary['DISABLE_MISSING_USERS']}")
+    print(f"  {tr(language, 'delete_missing')}: {summary['DELETE_MISSING_USERS']}")
+    print(f"  {tr(language, 'page_size')}: {summary['PAGE_SIZE']}")
+    print(f"  {tr(language, 'request_timeout')}: {summary['REQUEST_TIMEOUT']}")
+    print(f"  {tr(language, 'state_file')}: {summary['STATE_FILE']}")
+    print(f"  {tr(language, 'log_level')}: {summary['LOG_LEVEL']}")
+    print(f"  {tr(language, 'language')}: {summary['LANGUAGE']}")
+    print(f"  {tr(language, 'schedule_times')}: {summary['SYNC_TIMES'] or '-'}")
 
 
 def run_setup_wizard(config_file: Path) -> int:
     config_file = config_file.expanduser()
     existing_env: dict[str, str] = {}
     if config_file.exists():
-        for line in config_file.read_text(encoding="utf-8").splitlines():
-            if "=" not in line or line.strip().startswith("#"):
-                continue
-            key, value = line.split("=", 1)
-            existing_env[key.strip()] = value.strip()
+        from dotenv import dotenv_values
+
+        existing_env = {
+            key: value
+            for key, value in dotenv_values(config_file).items()
+            if key and value is not None
+        }
 
     default_state = existing_env.get("STATE_FILE", str(default_state_file()))
+    language = prompt_language(existing_env.get("LANGUAGE", "ru"))
+    existing_times = normalize_sync_times(existing_env.get("SYNC_TIMES", "")) if existing_env.get("SYNC_TIMES") else []
 
-    print(f"{APP_NAME} setup wizard")
-    print("This will create or update your personal .env config file.")
-    print(f"Config path: {config_file}")
+    print(tr(language, "wizard_title"))
+    print(tr(language, "wizard_intro"))
+    print(tr(language, "config_path", path=config_file))
     print()
 
-    src_url = normalize_base_url(prompt_text("Source panel URL", existing_env.get("SRC_URL", "https://panel-a.example.com")))
-    src_api_key = prompt_secret("Source JWT or Bearer token", has_default="SRC_API_KEY" in existing_env) or existing_env.get("SRC_API_KEY", "")
-    dst_url = normalize_base_url(prompt_text("Destination panel URL", existing_env.get("DST_URL", "https://panel-b.example.com")))
-    dst_api_key = prompt_secret("Destination JWT or Bearer token", has_default="DST_API_KEY" in existing_env) or existing_env.get("DST_API_KEY", "")
-    enable_user_sync = prompt_bool("Sync users", parse_bool(existing_env.get("ENABLE_USER_SYNC"), True))
-    enable_squad_sync = prompt_bool("Sync squads", parse_bool(existing_env.get("ENABLE_SQUAD_SYNC"), True))
-    enable_node_sync = prompt_bool("Sync nodes", parse_bool(existing_env.get("ENABLE_NODE_SYNC"), False))
-    disable_missing_users = prompt_bool("Disable imported users missing on source", parse_bool(existing_env.get("DISABLE_MISSING_USERS"), True))
-    delete_missing_users = prompt_bool("Delete imported users missing on source", parse_bool(existing_env.get("DELETE_MISSING_USERS"), False))
-    page_size = prompt_int("User page size", int(existing_env.get("PAGE_SIZE", "100")))
-    request_timeout = prompt_float("HTTP request timeout in seconds", float(existing_env.get("REQUEST_TIMEOUT", "20")))
-    state_file = prompt_text("State file path", default_state)
-    log_level = prompt_text("Log level", existing_env.get("LOG_LEVEL", "INFO")).upper()
+    src_url = normalize_base_url(prompt_text(tr(language, "source_url"), existing_env.get("SRC_URL", "https://panel-a.example.com"), language))
+    src_api_key = prompt_secret(tr(language, "source_token"), has_default="SRC_API_KEY" in existing_env, language=language) or existing_env.get("SRC_API_KEY", "")
+    dst_url = normalize_base_url(prompt_text(tr(language, "destination_url"), existing_env.get("DST_URL", "https://panel-b.example.com"), language))
+    dst_api_key = prompt_secret(tr(language, "destination_token"), has_default="DST_API_KEY" in existing_env, language=language) or existing_env.get("DST_API_KEY", "")
+    enable_user_sync = prompt_bool(tr(language, "sync_users"), parse_bool(existing_env.get("ENABLE_USER_SYNC"), True), language)
+    enable_squad_sync = prompt_bool(tr(language, "sync_squads"), parse_bool(existing_env.get("ENABLE_SQUAD_SYNC"), True), language)
+    enable_node_sync = prompt_bool(tr(language, "sync_nodes"), parse_bool(existing_env.get("ENABLE_NODE_SYNC"), False), language)
+    disable_missing_users = prompt_bool(tr(language, "disable_missing"), parse_bool(existing_env.get("DISABLE_MISSING_USERS"), True), language)
+    delete_missing_users = prompt_bool(tr(language, "delete_missing"), parse_bool(existing_env.get("DELETE_MISSING_USERS"), False), language)
+    page_size = prompt_int(tr(language, "page_size"), int(existing_env.get("PAGE_SIZE", "100")), language)
+    request_timeout = prompt_float(tr(language, "request_timeout"), float(existing_env.get("REQUEST_TIMEOUT", "20")), language)
+    state_file = prompt_text(tr(language, "state_file"), default_state, language)
+    log_level = prompt_text(tr(language, "log_level"), existing_env.get("LOG_LEVEL", "INFO"), language).upper()
+    sync_times = prompt_sync_times(tr(language, "schedule_times"), existing_times, language)
 
     config_values = {
         "SRC_URL": src_url,
@@ -288,11 +517,13 @@ def run_setup_wizard(config_file: Path) -> int:
         "REQUEST_TIMEOUT": str(request_timeout),
         "STATE_FILE": state_file,
         "LOG_LEVEL": log_level,
+        "LANGUAGE": language,
+        "SYNC_TIMES": " ".join(sync_times),
     }
 
-    print_setup_summary(config_values, config_file)
-    if not prompt_bool("Save this configuration", True):
-        print("Configuration was not saved.")
+    print_setup_summary(config_values, config_file, language)
+    if not prompt_bool(tr(language, "save_configuration"), True, language):
+        print(tr(language, "config_not_saved"))
         return 1
 
     write_env_file(
@@ -301,10 +532,11 @@ def run_setup_wizard(config_file: Path) -> int:
     )
 
     print()
-    print(f"Configuration saved to: {config_file}")
-    print("Run the sync with:")
-    print("  sync-remnawave --dry-run")
-    print("  sync-remnawave")
+    print(tr(language, "config_saved", path=config_file))
+    maybe_configure_cron(config_file, sync_times, language)
+    print(tr(language, "run_sync_with"))
+    print("  remnasync --dry-run")
+    print("  remnasync")
     return 0
 
 
@@ -334,6 +566,8 @@ class SyncConfig:
     dry_run: bool = False
     log_level: str = "INFO"
     state_file: Path = field(default_factory=default_state_file)
+    language: str = "ru"
+    sync_times: list[str] = field(default_factory=list)
 
     @classmethod
     def from_env_and_args(cls, args: argparse.Namespace) -> "SyncConfig":
@@ -353,6 +587,8 @@ class SyncConfig:
         page_size = int(os.getenv("PAGE_SIZE", "100"))
         request_timeout = float(os.getenv("REQUEST_TIMEOUT", "20"))
         state_file = Path(os.getenv("STATE_FILE", str(default_state_file()))).expanduser()
+        language = os.getenv("LANGUAGE", "ru").strip().lower() or "ru"
+        sync_times = normalize_sync_times(os.getenv("SYNC_TIMES", ""))
 
         if args.sync_users:
             enable_user_sync = True
@@ -386,6 +622,8 @@ class SyncConfig:
             dry_run=args.dry_run,
             log_level=log_level,
             state_file=Path(args.state_file).expanduser() if args.state_file else state_file,
+            language=language if language in {"ru", "en"} else "ru",
+            sync_times=sync_times,
         )
 
 
@@ -1468,12 +1706,12 @@ def main() -> int:
             except Exception as second_exc:
                 print(f"Configuration error after setup: {second_exc}", file=sys.stderr)
                 return 2
-            if not prompt_bool("Configuration saved. Start synchronization now", False):
-                print("Synchronization was not started. Run 'sync-remnawave --dry-run' when you are ready.")
+            if not prompt_bool(tr(config.language, "start_sync_now"), False, config.language):
+                print(tr(config.language, "sync_not_started"))
                 return 0
         else:
             print(f"Configuration error: {exc}", file=sys.stderr)
-            print("Run 'sync-remnawave init' or use --config-file to provide a valid .env.", file=sys.stderr)
+            print("Run 'remnasync init' or use --config-file to provide a valid .env.", file=sys.stderr)
             return 2
 
     configure_logging(config.log_level)
