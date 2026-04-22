@@ -215,6 +215,25 @@ def write_env_file(path: Path, values: Mapping[str, str]) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+def print_setup_summary(summary: Mapping[str, str | int | float | bool], config_file: Path) -> None:
+    print()
+    print("Please review your settings:")
+    print(f"  Config file: {config_file}")
+    print(f"  Source URL: {summary['SRC_URL']}")
+    print(f"  Source token: {'saved' if summary['SRC_API_KEY'] else 'missing'}")
+    print(f"  Destination URL: {summary['DST_URL']}")
+    print(f"  Destination token: {'saved' if summary['DST_API_KEY'] else 'missing'}")
+    print(f"  Sync users: {summary['ENABLE_USER_SYNC']}")
+    print(f"  Sync squads: {summary['ENABLE_SQUAD_SYNC']}")
+    print(f"  Sync nodes: {summary['ENABLE_NODE_SYNC']}")
+    print(f"  Disable missing users: {summary['DISABLE_MISSING_USERS']}")
+    print(f"  Delete missing users: {summary['DELETE_MISSING_USERS']}")
+    print(f"  Page size: {summary['PAGE_SIZE']}")
+    print(f"  Request timeout: {summary['REQUEST_TIMEOUT']}")
+    print(f"  State file: {summary['STATE_FILE']}")
+    print(f"  Log level: {summary['LOG_LEVEL']}")
+
+
 def run_setup_wizard(config_file: Path) -> int:
     config_file = config_file.expanduser()
     existing_env: dict[str, str] = {}
@@ -246,23 +265,30 @@ def run_setup_wizard(config_file: Path) -> int:
     state_file = prompt_text("State file path", default_state)
     log_level = prompt_text("Log level", existing_env.get("LOG_LEVEL", "INFO")).upper()
 
+    config_values = {
+        "SRC_URL": src_url,
+        "SRC_API_KEY": src_api_key,
+        "DST_URL": dst_url,
+        "DST_API_KEY": dst_api_key,
+        "ENABLE_USER_SYNC": bool_to_env(enable_user_sync),
+        "ENABLE_SQUAD_SYNC": bool_to_env(enable_squad_sync),
+        "ENABLE_NODE_SYNC": bool_to_env(enable_node_sync),
+        "DISABLE_MISSING_USERS": bool_to_env(disable_missing_users),
+        "DELETE_MISSING_USERS": bool_to_env(delete_missing_users),
+        "PAGE_SIZE": str(page_size),
+        "REQUEST_TIMEOUT": str(request_timeout),
+        "STATE_FILE": state_file,
+        "LOG_LEVEL": log_level,
+    }
+
+    print_setup_summary(config_values, config_file)
+    if not prompt_bool("Save this configuration", True):
+        print("Configuration was not saved.")
+        return 1
+
     write_env_file(
         config_file,
-        {
-            "SRC_URL": src_url,
-            "SRC_API_KEY": src_api_key,
-            "DST_URL": dst_url,
-            "DST_API_KEY": dst_api_key,
-            "ENABLE_USER_SYNC": bool_to_env(enable_user_sync),
-            "ENABLE_SQUAD_SYNC": bool_to_env(enable_squad_sync),
-            "ENABLE_NODE_SYNC": bool_to_env(enable_node_sync),
-            "DISABLE_MISSING_USERS": bool_to_env(disable_missing_users),
-            "DELETE_MISSING_USERS": bool_to_env(delete_missing_users),
-            "PAGE_SIZE": str(page_size),
-            "REQUEST_TIMEOUT": str(request_timeout),
-            "STATE_FILE": state_file,
-            "LOG_LEVEL": log_level,
-        },
+        config_values,
     )
 
     print()
@@ -1433,6 +1459,9 @@ def main() -> int:
             except Exception as second_exc:
                 print(f"Configuration error after setup: {second_exc}", file=sys.stderr)
                 return 2
+            if not prompt_bool("Configuration saved. Start synchronization now", False):
+                print("Synchronization was not started. Run 'sync-remnawave --dry-run' when you are ready.")
+                return 0
         else:
             print(f"Configuration error: {exc}", file=sys.stderr)
             print("Run 'sync-remnawave init' or use --config-file to provide a valid .env.", file=sys.stderr)

@@ -72,6 +72,8 @@ The wizard will ask:
 - whether to sync nodes
 - whether missing imported users should be disabled or deleted
 
+The setup wizard does not start synchronization by itself. It saves your configuration first, and then you can start a dry run or a real sync yourself.
+
 ### Run The Sync
 
 #### Safe test run
@@ -202,6 +204,8 @@ sync-remnawave init
 - нужно ли синхронизировать squads
 - нужно ли синхронизировать nodes
 - что делать с импортированными пользователями, которых больше нет на источнике
+
+Мастер настройки сам по себе не запускает синхронизацию. Сначала он сохраняет настройки, а затем вы уже отдельно запускаете `--dry-run` или обычную синхронизацию.
 
 ### Запуск Синхронизации
 
