@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import json
+import locale
 import logging
 import os
 import sys
@@ -110,6 +111,13 @@ def bool_to_env(value: bool) -> str:
     return "true" if value else "false"
 
 
+def console_encoding() -> str:
+    encoding = locale.getpreferredencoding(False)
+    if not encoding:
+        return "utf-8"
+    return encoding
+
+
 @contextmanager
 def open_console_streams() -> Iterator[tuple[TextIO, TextIO]]:
     if sys.stdin.isatty() and sys.stdout.isatty():
@@ -124,8 +132,9 @@ def open_console_streams() -> Iterator[tuple[TextIO, TextIO]]:
         output_target = "/dev/tty"
 
     try:
-        console_in = open(input_target, "r", encoding="utf-8", newline="")
-        console_out = open(output_target, "w", encoding="utf-8", newline="")
+        encoding = console_encoding()
+        console_in = open(input_target, "r", encoding=encoding, errors="replace", newline="")
+        console_out = open(output_target, "w", encoding=encoding, errors="replace", newline="")
     except OSError as exc:
         raise SyncError(
             "Interactive setup requires a terminal. Run 'sync-remnawave init' directly in a shell session."

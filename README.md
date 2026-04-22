@@ -119,7 +119,7 @@ By default the config file is stored here:
 If you do not want to use the one-line installer:
 
 ```bash
-python -m pip install "git+https://github.com/LaRsonOFFai/SyncRemnawave.git"
+python -m pip install --upgrade --force-reinstall "git+https://github.com/LaRsonOFFai/SyncRemnawave.git"
 sync-remnawave init
 sync-remnawave --dry-run
 ```
@@ -252,7 +252,7 @@ sync-remnawave --config-file ./my-sync.env
 Если не хотите использовать установку одной строкой:
 
 ```bash
-python -m pip install "git+https://github.com/LaRsonOFFai/SyncRemnawave.git"
+python -m pip install --upgrade --force-reinstall "git+https://github.com/LaRsonOFFai/SyncRemnawave.git"
 sync-remnawave init
 sync-remnawave --dry-run
 ```

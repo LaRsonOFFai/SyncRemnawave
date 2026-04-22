@@ -14,7 +14,7 @@ fi
 mkdir -p "${INSTALL_ROOT}" "${BIN_DIR}"
 python3 -m venv "${VENV_DIR}"
 "${VENV_DIR}/bin/pip" install --upgrade pip
-"${VENV_DIR}/bin/pip" install "git+${REPO_URL}"
+"${VENV_DIR}/bin/pip" install --upgrade --force-reinstall --no-cache-dir "git+${REPO_URL}"
 
 cat > "${BIN_DIR}/sync-remnawave" <<EOF
 #!/usr/bin/env bash

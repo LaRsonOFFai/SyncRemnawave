@@ -12,7 +12,7 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
 New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
 python -m venv $venvDir
 & (Join-Path $venvDir "Scripts\\python.exe") -m pip install --upgrade pip
-& (Join-Path $venvDir "Scripts\\python.exe") -m pip install "git+$repoUrl"
+& (Join-Path $venvDir "Scripts\\python.exe") -m pip install --upgrade --force-reinstall --no-cache-dir "git+$repoUrl"
 
 $shimPath = Join-Path $binDir "sync-remnawave.cmd"
 $shim = "@echo off`r`n""$venvDir\\Scripts\\sync-remnawave.exe"" %*`r`n"
