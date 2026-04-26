@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping, TextIO
 
 import httpx
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 from tenacity import (
     RetryCallState,
     retry,
@@ -73,6 +73,27 @@ I18N: dict[str, dict[str, str]] = {
         "integer_required": "Please enter an integer.",
         "number_required": "Please enter a number.",
         "time_invalid": "Invalid time list. Use values like: 03:00 04:00 12:00 23:59",
+        "menu_title": "SyncRemnawave menu",
+        "menu_prompt": "Choose an action",
+        "menu_sync_now": "Start synchronization now",
+        "menu_dry_run": "Run dry-run",
+        "menu_quick_settings": "Quick settings",
+        "menu_full_setup": "Open full setup wizard",
+        "menu_exit": "Exit",
+        "menu_back": "Back",
+        "menu_invalid": "Please enter one of the listed numbers.",
+        "quick_settings_title": "Quick settings",
+        "quick_settings_saved": "Settings saved to: {path}",
+        "quick_settings_missing": "Config file does not exist yet. Opening the setup wizard first.",
+        "setting_on": "ON",
+        "setting_off": "OFF",
+        "quick_toggle_users": "Toggle users sync",
+        "quick_toggle_squads": "Toggle squads sync",
+        "quick_toggle_nodes": "Toggle nodes sync",
+        "quick_toggle_disable_missing": "Toggle disable missing users",
+        "quick_toggle_delete_missing": "Toggle delete missing users",
+        "quick_open_wizard": "Open full setup wizard",
+        "quick_current_value": "Current value: {value}",
     },
     "ru": {
         "wizard_title": "Мастер настройки SyncRemnawave",
@@ -115,6 +136,27 @@ I18N: dict[str, dict[str, str]] = {
         "integer_required": "Введите целое число.",
         "number_required": "Введите число.",
         "time_invalid": "Неверный список времени. Используйте формат: 03:00 04:00 12:00 23:59",
+        "menu_title": "Меню SyncRemnawave",
+        "menu_prompt": "Выберите действие",
+        "menu_sync_now": "Запустить синхронизацию сейчас",
+        "menu_dry_run": "Запустить dry-run",
+        "menu_quick_settings": "Быстрые настройки",
+        "menu_full_setup": "Открыть полный мастер настройки",
+        "menu_exit": "Выход",
+        "menu_back": "Назад",
+        "menu_invalid": "Введите один из предложенных номеров.",
+        "quick_settings_title": "Быстрые настройки",
+        "quick_settings_saved": "Настройки сохранены в: {path}",
+        "quick_settings_missing": "Файл конфигурации пока не создан. Сначала откроется мастер настройки.",
+        "setting_on": "ВКЛ",
+        "setting_off": "ВЫКЛ",
+        "quick_toggle_users": "Переключить синхронизацию users",
+        "quick_toggle_squads": "Переключить синхронизацию squads",
+        "quick_toggle_nodes": "Переключить синхронизацию nodes",
+        "quick_toggle_disable_missing": "Переключить отключение отсутствующих пользователей",
+        "quick_toggle_delete_missing": "Переключить удаление отсутствующих пользователей",
+        "quick_open_wizard": "Открыть полный мастер настройки",
+        "quick_current_value": "Текущее значение: {value}",
     },
 }
 
@@ -368,6 +410,107 @@ def prompt_sync_times(label: str, default: list[str], language: str) -> list[str
             return normalize_sync_times(raw_value)
         except ValueError:
             print(tr(language, "time_invalid"))
+
+
+def prompt_menu_choice(title: str, options: list[str], language: str) -> int:
+    print()
+    print(title)
+    for index, option in enumerate(options, start=1):
+        print(f"{index}. {option}")
+    while True:
+        raw_value = read_prompt_line(f"{tr(language, 'menu_prompt')}: ").strip()
+        try:
+            selected = int(raw_value)
+        except ValueError:
+            print(tr(language, "menu_invalid"))
+            continue
+        if 1 <= selected <= len(options):
+            return selected
+        print(tr(language, "menu_invalid"))
+
+
+def load_existing_env(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    return {
+        key: value
+        for key, value in dotenv_values(path).items()
+        if key and value is not None
+    }
+
+
+def quick_toggle_settings(config_file: Path, language: str) -> None:
+    config_file = config_file.expanduser()
+    if not config_file.exists():
+        print(tr(language, "quick_settings_missing"))
+        run_setup_wizard(config_file)
+        return
+
+    while True:
+        env_data = load_existing_env(config_file)
+        toggles = [
+            ("ENABLE_USER_SYNC", tr(language, "quick_toggle_users")),
+            ("ENABLE_SQUAD_SYNC", tr(language, "quick_toggle_squads")),
+            ("ENABLE_NODE_SYNC", tr(language, "quick_toggle_nodes")),
+            ("DISABLE_MISSING_USERS", tr(language, "quick_toggle_disable_missing")),
+            ("DELETE_MISSING_USERS", tr(language, "quick_toggle_delete_missing")),
+        ]
+        options = [
+            f"{label} [{tr(language, 'setting_on') if parse_bool(env_data.get(key), False) else tr(language, 'setting_off')}]"
+            for key, label in toggles
+        ]
+        options.append(tr(language, "quick_open_wizard"))
+        options.append(tr(language, "menu_back"))
+        selected = prompt_menu_choice(tr(language, "quick_settings_title"), options, language)
+
+        if selected == len(options):
+            return
+        if selected == len(options) - 1:
+            run_setup_wizard(config_file)
+            continue
+
+        env_key, _ = toggles[selected - 1]
+        current_value = parse_bool(env_data.get(env_key), False)
+        env_data[env_key] = bool_to_env(not current_value)
+        write_env_file(config_file, env_data)
+        print(tr(language, "quick_settings_saved", path=config_file))
+
+
+def run_interactive_menu(config_file: Path) -> tuple[str, bool]:
+    config_file = config_file.expanduser()
+    env_data = load_existing_env(config_file)
+    language = env_data.get("LANGUAGE", "ru").strip().lower() if env_data.get("LANGUAGE") else "ru"
+    if language not in {"ru", "en"}:
+        language = "ru"
+
+    while True:
+        options = [
+            tr(language, "menu_sync_now"),
+            tr(language, "menu_dry_run"),
+            tr(language, "menu_quick_settings"),
+            tr(language, "menu_full_setup"),
+            tr(language, "menu_exit"),
+        ]
+        selected = prompt_menu_choice(tr(language, "menu_title"), options, language)
+        if selected == 1:
+            return "sync", False
+        if selected == 2:
+            return "sync", True
+        if selected == 3:
+            quick_toggle_settings(config_file, language)
+            env_data = load_existing_env(config_file)
+            language = env_data.get("LANGUAGE", language).strip().lower() if env_data.get("LANGUAGE") else language
+            if language not in {"ru", "en"}:
+                language = "ru"
+            continue
+        if selected == 4:
+            run_setup_wizard(config_file)
+            env_data = load_existing_env(config_file)
+            language = env_data.get("LANGUAGE", language).strip().lower() if env_data.get("LANGUAGE") else language
+            if language not in {"ru", "en"}:
+                language = "ru"
+            continue
+        return "exit", False
 
 
 def cron_command(config_file: Path) -> str:
@@ -1696,12 +1839,22 @@ def preflight_source(client: RemnawaveClient, config: SyncConfig) -> None:
 
 def main() -> int:
     parser = build_arg_parser()
-    args = parser.parse_args()
+    raw_args = sys.argv[1:]
+    args = parser.parse_args(raw_args)
     config_file = Path(args.config_file).expanduser()
 
     load_dotenv(override=False)
     if config_file.exists():
         load_dotenv(config_file, override=True)
+
+    if not raw_args and sys.stdin.isatty() and sys.stdout.isatty():
+        command, dry_run = run_interactive_menu(config_file)
+        if command == "exit":
+            return 0
+        args.command = command
+        args.dry_run = dry_run
+        if config_file.exists():
+            load_dotenv(config_file, override=True)
 
     if args.command == "init" or args.wizard:
         return run_setup_wizard(config_file)

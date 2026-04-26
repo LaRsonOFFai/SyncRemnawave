@@ -60,6 +60,13 @@ After installation, run the app from any directory with:
 remnasync
 ```
 
+When you run `remnasync` in an interactive terminal with no extra arguments, it opens a simple menu where you can:
+
+- start synchronization
+- run `dry-run`
+- open the full setup wizard
+- quickly toggle saved options such as node sync on or off
+
 Compatibility alias:
 
 ```bash
@@ -213,6 +220,13 @@ irm https://raw.githubusercontent.com/LaRsonOFFai/SyncRemnawave/main/install.ps1
 ```bash
 remnasync
 ```
+
+Если запустить `remnasync` в обычном интерактивном терминале без дополнительных аргументов, откроется простое меню, где можно:
+
+- запустить синхронизацию
+- запустить `dry-run`
+- открыть полный мастер настройки
+- быстро переключить сохранённые опции, например включить или выключить синхронизацию nodes
 
 Совместимый алиас тоже оставлен:
 
