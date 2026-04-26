@@ -1061,6 +1061,7 @@ class SquadSyncService:
         summary: Summary,
         dry_run: bool,
         dst_inbound_by_fingerprint: Mapping[tuple[Any, ...], str],
+        enable_internal_sync: bool = True,
     ) -> None:
         self.src = src
         self.dst = dst
@@ -1068,11 +1069,15 @@ class SquadSyncService:
         self.summary = summary
         self.dry_run = dry_run
         self.dst_inbound_by_fingerprint = dst_inbound_by_fingerprint
+        self.enable_internal_sync = enable_internal_sync
         self.mapping: dict[tuple[str, str], str] = {}
 
     def sync(self) -> dict[tuple[str, str], str]:
         self._sync_external()
-        self._sync_internal()
+        if self.enable_internal_sync:
+            self._sync_internal()
+        else:
+            LOGGER.warning("SKIP internal squads reason=destination_inbounds_unavailable")
         return self.mapping
 
     def _match_dest_squad(
@@ -1270,6 +1275,7 @@ class UserSyncService:
         summary: Summary,
         config: SyncConfig,
         squad_mapping: Mapping[tuple[str, str], str],
+        allow_internal_squad_updates: bool = True,
     ) -> None:
         self.src = src
         self.dst = dst
@@ -1278,6 +1284,7 @@ class UserSyncService:
         self.summary = summary
         self.config = config
         self.squad_mapping = squad_mapping
+        self.allow_internal_squad_updates = allow_internal_squad_updates
 
     def _build_dest_indexes(self, dest_users: list[dict[str, Any]]) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]], dict[int, dict[str, Any]], dict[str, dict[str, Any]]]:
         by_source_uuid: dict[str, dict[str, Any]] = {}
@@ -1373,6 +1380,8 @@ class UserSyncService:
         for source_user in source_users:
             try:
                 payload = map_user_payload(source_user, self.squad_mapping)
+                if not self.allow_internal_squad_updates:
+                    payload.pop("activeInternalSquads", None)
                 create_payload = diff_dict({}, payload, self.CREATE_ALLOWED_FIELDS)
                 dest_user = self._match_user(source_user, by_source_uuid, by_username, by_telegram_id)
 
@@ -1730,13 +1739,34 @@ def main() -> int:
     try:
         preflight_source(src_client, config)
 
-        dst_inbounds = dst_client.list_inbounds()
-        dst_profiles = dst_client.list_config_profiles()
-        src_profiles = src_client.list_config_profiles() if config.enable_node_sync else []
-        dst_inbound_by_fingerprint = {
-            inbound_fingerprint(item): item["uuid"]
-            for item in dst_inbounds
-        }
+        dst_inbounds: list[dict[str, Any]] = []
+        dst_profiles: list[dict[str, Any]] = []
+        src_profiles: list[dict[str, Any]] = []
+        dst_inbound_by_fingerprint: dict[tuple[Any, ...], str] = {}
+        allow_internal_squad_sync = True
+        allow_internal_user_squad_updates = True
+
+        if config.enable_squad_sync or config.enable_node_sync:
+            try:
+                dst_inbounds = dst_client.list_inbounds()
+            except Exception as exc:
+                if config.enable_node_sync:
+                    raise SyncError(f"Destination inbounds preflight failed and node sync requires it: {exc}") from exc
+                allow_internal_squad_sync = False
+                allow_internal_user_squad_updates = False
+                LOGGER.warning(
+                    "Destination inbounds API is unavailable; internal squad sync and internal squad membership updates for users will be skipped: %s",
+                    exc,
+                )
+            else:
+                dst_inbound_by_fingerprint = {
+                    inbound_fingerprint(item): item["uuid"]
+                    for item in dst_inbounds
+                }
+
+        if config.enable_node_sync:
+            dst_profiles = dst_client.list_config_profiles()
+            src_profiles = src_client.list_config_profiles()
 
         squad_mapping: dict[tuple[str, str], str] = {}
         if config.enable_squad_sync:
@@ -1747,6 +1777,7 @@ def main() -> int:
                 summary=summary,
                 dry_run=config.dry_run,
                 dst_inbound_by_fingerprint=dst_inbound_by_fingerprint,
+                enable_internal_sync=allow_internal_squad_sync,
             )
             squad_mapping = squad_service.sync()
         else:
@@ -1763,6 +1794,7 @@ def main() -> int:
                 summary=summary,
                 config=config,
                 squad_mapping=squad_mapping,
+                allow_internal_squad_updates=allow_internal_user_squad_updates,
             )
             user_service.sync()
 
