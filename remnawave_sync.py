@@ -131,7 +131,9 @@ I18N: dict[str, dict[str, str]] = {
         "backup_offer_sync": "Backup is older than 24 hours. Start panel sync now",
         "backup_sync_after_restore": "Start panel sync now",
         "telegram_title": "Telegram notification setup",
-        "telegram_token": "BOT_TOKEN from @BotFather",
+        "telegram_token": "BOT_TOKEN from @BotFather (example: 123456789:ABC...)",
+        "telegram_token_preview": "Using BOT_TOKEN: {token}",
+        "telegram_token_invalid": "Invalid BOT_TOKEN. Enter the token from @BotFather, not the bot username like @my_bot.",
         "telegram_chat_id": "CHAT_ID or group ID",
         "telegram_topic_id": "TOPIC_ID for forum groups (empty if not needed)",
         "telegram_test_sending": "Sending test Telegram message...",
@@ -141,15 +143,14 @@ I18N: dict[str, dict[str, str]] = {
         "telegram_error": "Telegram error: {error}",
         "telegram_not_configured": "Telegram notifications are not configured.",
         "update_checking": "Checking for updates...",
-        "update_source": "Update source: {repo}@{ref}",
-        "update_current": "Installed commit: {commit}",
-        "update_latest": "Latest commit: {commit}",
-        "update_not_installed_from_git": "Installed Git metadata was not found. The updater will reinstall from the default repository.",
+        "update_not_installed_from_git": "Installed Git metadata was not found.",
         "update_already_latest": "SyncRemnawave is already on the latest version.",
+        "update_available": "A new SyncRemnawave version is available.",
+        "update_confirm": "Install the update now",
         "update_installing": "Installing update...",
         "update_installed": "Update installed. Please restart remnasync to use the new version.",
         "update_failed": "Update failed: {error}",
-        "update_git_missing": "Git is not available, so the updater cannot check the latest commit. Reinstalling anyway.",
+        "update_git_missing": "Git is not available, so the updater cannot check for updates.",
     },
     "ru": {
         "wizard_title": "Мастер настройки SyncRemnawave",
@@ -242,7 +243,9 @@ I18N: dict[str, dict[str, str]] = {
         "backup_offer_sync": "Бекап старше 24 часов. Запустить синхронизацию панелей сейчас",
         "backup_sync_after_restore": "Запустить синхронизацию панелей сейчас",
         "telegram_title": "Настройка Telegram уведомлений",
-        "telegram_token": "BOT_TOKEN от @BotFather",
+        "telegram_token": "BOT_TOKEN от @BotFather (пример: 123456789:ABC...)",
+        "telegram_token_preview": "Используется BOT_TOKEN: {token}",
+        "telegram_token_invalid": "Неверный BOT_TOKEN. Введите token от @BotFather, а не username бота вида @my_bot.",
         "telegram_chat_id": "CHAT_ID или ID группы",
         "telegram_topic_id": "TOPIC_ID для форум-группы (пусто, если не нужно)",
         "telegram_test_sending": "Отправляю тестовое сообщение в Telegram...",
@@ -252,15 +255,14 @@ I18N: dict[str, dict[str, str]] = {
         "telegram_error": "Ошибка Telegram: {error}",
         "telegram_not_configured": "Telegram уведомления не настроены.",
         "update_checking": "Проверяю обновления...",
-        "update_source": "Источник обновления: {repo}@{ref}",
-        "update_current": "Установленный commit: {commit}",
-        "update_latest": "Последний commit: {commit}",
-        "update_not_installed_from_git": "Git metadata установленного пакета не найден. Обновлятор переустановит программу из стандартного репозитория.",
+        "update_not_installed_from_git": "Git metadata установленного пакета не найден.",
         "update_already_latest": "Установлена последняя версия SyncRemnawave.",
+        "update_available": "Доступна новая версия SyncRemnawave.",
+        "update_confirm": "Установить обновление сейчас",
         "update_installing": "Устанавливаю обновление...",
         "update_installed": "Обновление установлено. Перезапустите remnasync, чтобы использовать новую версию.",
         "update_failed": "Не удалось обновиться: {error}",
-        "update_git_missing": "Git недоступен, поэтому проверить последний commit нельзя. Всё равно запускаю переустановку.",
+        "update_git_missing": "Git недоступен, поэтому проверить обновления нельзя.",
     },
 }
 
@@ -541,6 +543,16 @@ def prompt_menu_choice(title: str, options: list[str], language: str) -> int:
         print(tr(language, "menu_invalid"))
 
 
+def validate_telegram_bot_token(token: str, language: str = "ru") -> str:
+    token = token.strip()
+    if token.startswith("@") or ":" not in token:
+        raise SyncError(tr(language, "telegram_token_invalid"))
+    bot_id, secret = token.split(":", 1)
+    if not bot_id.isdigit() or not secret.strip():
+        raise SyncError(tr(language, "telegram_token_invalid"))
+    return token
+
+
 def load_existing_env(path: Path) -> dict[str, str]:
     if not path.exists():
         return {}
@@ -651,11 +663,12 @@ class BackupManager:
         telegram = self.config.get("telegram", {})
         if not isinstance(telegram, dict):
             return None
-        bot_token = str(telegram.get("bot_token") or "").strip()
+        raw_bot_token = str(telegram.get("bot_token") or "").strip()
         chat_id = str(telegram.get("chat_id") or "").strip()
         topic_id = str(telegram.get("topic_id") or "").strip()
-        if not bot_token or not chat_id:
+        if not raw_bot_token or not chat_id:
             return None
+        bot_token = validate_telegram_bot_token(raw_bot_token, self.language)
         status = "SUCCESS" if success else "FAILED"
         payload: dict[str, Any] = {
             "chat_id": chat_id,
@@ -703,11 +716,11 @@ class BackupManager:
         print(tr(self.language, "telegram_title"))
         existing = self.config.get("telegram", {})
         existing = existing if isinstance(existing, dict) else {}
-        bot_token = prompt_secret(
-            tr(self.language, "telegram_token"),
-            has_default=bool(existing.get("bot_token")),
-            language=self.language,
-        ) or str(existing.get("bot_token") or "")
+        bot_token = validate_telegram_bot_token(
+            prompt_text(tr(self.language, "telegram_token"), str(existing.get("bot_token") or "") or None, self.language),
+            self.language,
+        )
+        print(tr(self.language, "telegram_token_preview", token=bot_token))
         chat_id = prompt_text(tr(self.language, "telegram_chat_id"), str(existing.get("chat_id") or "") or None, self.language)
         topic_id = prompt_text(tr(self.language, "telegram_topic_id"), str(existing.get("topic_id") or ""), self.language)
 
@@ -1030,20 +1043,24 @@ def run_self_update(language: str) -> bool:
     repo_url, ref, current_commit = installed_git_metadata()
     if current_commit is None:
         print(tr(language, "update_not_installed_from_git"))
-    print(tr(language, "update_source", repo=repo_url, ref=ref))
-    print(tr(language, "update_current", commit=current_commit[:12] if current_commit else "unknown"))
 
     latest_commit: str | None = None
     try:
         latest_commit = latest_remote_commit(repo_url, ref)
     except FileNotFoundError:
         print(tr(language, "update_git_missing"))
+        return False
 
     if latest_commit:
-        print(tr(language, "update_latest", commit=latest_commit[:12]))
         if current_commit and latest_commit.startswith(current_commit):
             print(tr(language, "update_already_latest"))
             return False
+        print(tr(language, "update_available"))
+        if not prompt_bool(tr(language, "update_confirm"), False, language):
+            return False
+    else:
+        print(tr(language, "update_failed", error="could not check remote version"))
+        return False
 
     try:
         print(tr(language, "update_installing"))

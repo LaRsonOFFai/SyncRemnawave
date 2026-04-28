@@ -144,9 +144,11 @@ You can also add one or more S3-compatible accounts from the same menu. For S3 y
 
 The same backup menu can configure Telegram notifications. You need:
 
-- `BOT_TOKEN` from `@BotFather`
+- `BOT_TOKEN` from `@BotFather`, for example `123456789:ABC...`
 - `CHAT_ID` for a user, group, or channel
 - optional `TOPIC_ID` for Telegram forum groups
+
+Do not enter the bot username like `@my_backup_bot`; Telegram API requires the numeric token from BotFather.
 
 S3 settings are stored in:
 
@@ -168,6 +170,7 @@ remnasync
 
 Choose `Update SyncRemnawave`. The app checks the Git branch it was installed from and reinstalls itself when a newer commit is available. Restart `remnasync` after updating.
 If the installed version is already current, the app prints that the latest version is installed and stays in the menu.
+If a new version is available, the app asks for confirmation before installing it.
 
 ### Run The Sync
 
@@ -369,9 +372,11 @@ remnasync
 
 В этом же меню можно настроить Telegram уведомления. Для этого нужны:
 
-- `BOT_TOKEN` от `@BotFather`
+- `BOT_TOKEN` от `@BotFather`, например `123456789:ABC...`
 - `CHAT_ID` пользователя, группы или канала
 - опциональный `TOPIC_ID` для Telegram forum-групп
+
+Не вводите username бота вида `@my_backup_bot`; Telegram API нужен именно числовой token от BotFather.
 
 Настройки S3 хранятся здесь:
 
@@ -393,6 +398,7 @@ remnasync
 
 Выберите `Обновить SyncRemnawave`. Программа проверит Git ветку, из которой была установлена, и переустановит себя, если появился новый commit. После обновления перезапустите `remnasync`.
 Если установлена актуальная версия, программа напишет, что версия последняя, и останется в меню.
+Если доступна новая версия, программа сначала спросит подтверждение на установку.
 
 ### Запуск Синхронизации
 
