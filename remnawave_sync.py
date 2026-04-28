@@ -786,6 +786,11 @@ class Summary:
     users_deleted: int = 0
     nodes_created: int = 0
     nodes_updated: int = 0
+    infra_providers_created: int = 0
+    infra_providers_updated: int = 0
+    infra_billing_nodes_created: int = 0
+    infra_billing_nodes_updated: int = 0
+    infra_billing_nodes_deleted: int = 0
     errors: int = 0
 
 
@@ -985,6 +990,35 @@ class RemnawaveClient:
         items, _ = self.extract_items(payload, ["inbounds"])
         return items
 
+    def list_infra_providers(self) -> list[dict[str, Any]]:
+        payload = self.request("GET", "/api/infra-billing/providers")
+        items, _ = self.extract_items(payload, ["providers"])
+        return items
+
+    def create_infra_provider(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        return self.unwrap_response(self.request("POST", "/api/infra-billing/providers", json_body=payload))
+
+    def update_infra_provider(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        return self.unwrap_response(self.request("PATCH", "/api/infra-billing/providers", json_body=payload))
+
+    def list_infra_billing_nodes(self) -> list[dict[str, Any]]:
+        payload = self.request("GET", "/api/infra-billing/nodes")
+        items, _ = self.extract_items(payload, ["billingNodes"])
+        return items
+
+    def create_infra_billing_node(self, payload: Mapping[str, Any]) -> Any:
+        return self.request("POST", "/api/infra-billing/nodes", json_body=payload)
+
+    def update_infra_billing_nodes(self, uuids: list[str], next_billing_at: str) -> Any:
+        return self.request(
+            "PATCH",
+            "/api/infra-billing/nodes",
+            json_body={"uuids": uuids, "nextBillingAt": next_billing_at},
+        )
+
+    def delete_infra_billing_node(self, billing_node_uuid: str) -> None:
+        self.request("DELETE", f"/api/infra-billing/nodes/{billing_node_uuid}", expected_statuses={200})
+
     def create_user(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         return self.unwrap_response(self.request("POST", "/api/users", json_body=payload))
 
@@ -1175,6 +1209,30 @@ def map_node_payload(source_node: Mapping[str, Any]) -> dict[str, Any]:
         }
     )
     return payload
+
+
+def map_infra_provider_payload(source_provider: Mapping[str, Any]) -> dict[str, Any]:
+    return clean_none(
+        {
+            "name": source_provider.get("name"),
+            "faviconLink": source_provider.get("faviconLink"),
+            "loginUrl": source_provider.get("loginUrl"),
+        }
+    )
+
+
+def map_infra_billing_node_payload(
+    source_billing_node: Mapping[str, Any],
+    dest_provider_uuid: str,
+    dest_node_uuid: str,
+) -> dict[str, Any]:
+    return clean_none(
+        {
+            "providerUuid": dest_provider_uuid,
+            "nodeUuid": dest_node_uuid,
+            "nextBillingAt": source_billing_node.get("nextBillingAt"),
+        }
+    )
 
 
 def inbound_fingerprint(inbound: Mapping[str, Any]) -> tuple[Any, ...]:
@@ -1799,6 +1857,241 @@ class NodeSyncService:
             self.dst.enable_node(dest_node_uuid)
 
 
+class InfraBillingSyncService:
+    PROVIDER_ALLOWED_FIELDS = {"name", "faviconLink", "loginUrl"}
+
+    def __init__(
+        self,
+        src: RemnawaveClient,
+        dst: RemnawaveClient,
+        state_store: StateStore,
+        summary: Summary,
+        dry_run: bool,
+    ) -> None:
+        self.src = src
+        self.dst = dst
+        self.state_store = state_store
+        self.summary = summary
+        self.dry_run = dry_run
+
+    def sync(self) -> None:
+        source_providers = self.src.list_infra_providers()
+        dest_providers = self.dst.list_infra_providers()
+        provider_mapping = self._sync_providers(source_providers, dest_providers)
+
+        source_billing_nodes = self.src.list_infra_billing_nodes()
+        dest_billing_nodes = self.dst.list_infra_billing_nodes()
+        self._sync_billing_nodes(source_billing_nodes, dest_billing_nodes, provider_mapping)
+
+    def _sync_providers(
+        self,
+        source_providers: list[dict[str, Any]],
+        dest_providers: list[dict[str, Any]],
+    ) -> dict[str, str]:
+        provider_mapping: dict[str, str] = {}
+        dest_by_uuid = {item["uuid"]: item for item in dest_providers}
+        dest_by_name = {
+            item["name"]: item for item in dest_providers if isinstance(item.get("name"), str)
+        }
+
+        for source_provider in source_providers:
+            source_uuid = source_provider["uuid"]
+            payload = map_infra_provider_payload(source_provider)
+            dest_provider: dict[str, Any] | None = None
+
+            mapped_uuid = self.state_store.get_mapping("infra_billing_providers", source_uuid)
+            if mapped_uuid:
+                dest_provider = dest_by_uuid.get(mapped_uuid)
+            if dest_provider is None:
+                provider_name = source_provider.get("name")
+                if isinstance(provider_name, str):
+                    dest_provider = dest_by_name.get(provider_name)
+
+            try:
+                if dest_provider is None:
+                    if self.dry_run:
+                        LOGGER.info("CREATE infra provider name=%s", source_provider.get("name"))
+                        provider_mapping[source_uuid] = f"dry-run-infra-provider-{source_uuid}"
+                    else:
+                        created = self.dst.create_infra_provider(payload)
+                        provider_mapping[source_uuid] = created["uuid"]
+                        self.state_store.set_mapping("infra_billing_providers", source_uuid, created["uuid"])
+                        self.summary.infra_providers_created += 1
+                        LOGGER.info("created infra provider name=%s uuid=%s", source_provider.get("name"), created["uuid"])
+                    continue
+
+                provider_mapping[source_uuid] = dest_provider["uuid"]
+                self.state_store.set_mapping("infra_billing_providers", source_uuid, dest_provider["uuid"])
+                patch = diff_dict(dest_provider, payload, self.PROVIDER_ALLOWED_FIELDS)
+                if patch:
+                    patch["uuid"] = dest_provider["uuid"]
+                    if self.dry_run:
+                        LOGGER.info("UPDATE infra provider name=%s fields=%s", source_provider.get("name"), sorted(patch))
+                    else:
+                        self.dst.update_infra_provider(patch)
+                        self.summary.infra_providers_updated += 1
+                        LOGGER.info("updated infra provider name=%s uuid=%s", source_provider.get("name"), dest_provider["uuid"])
+                else:
+                    LOGGER.info("skipped infra provider name=%s reason=no_changes", source_provider.get("name"))
+            except Exception as exc:
+                self.summary.errors += 1
+                LOGGER.exception("failed syncing infra provider %s: %s", source_provider.get("name"), exc)
+
+        imported_dest = self.state_store.reverse_mapping("infra_billing_providers")
+        source_provider_ids = {item["uuid"] for item in source_providers}
+        for dest_uuid, source_uuid in imported_dest.items():
+            if source_uuid not in source_provider_ids:
+                LOGGER.warning("destination infra provider uuid=%s no longer exists on source; not deleting", dest_uuid)
+
+        return provider_mapping
+
+    def _sync_billing_nodes(
+        self,
+        source_billing_nodes: list[dict[str, Any]],
+        dest_billing_nodes: list[dict[str, Any]],
+        provider_mapping: Mapping[str, str],
+    ) -> None:
+        node_mapping = self.state_store.data.get("nodes", {})
+        reverse_node_mapping = self.state_store.reverse_mapping("nodes")
+        source_by_node_uuid = {
+            item["nodeUuid"]: item
+            for item in source_billing_nodes
+            if isinstance(item.get("nodeUuid"), str)
+        }
+        dest_by_node_uuid = {
+            item["nodeUuid"]: item
+            for item in dest_billing_nodes
+            if isinstance(item.get("nodeUuid"), str)
+        }
+
+        for source_billing_node in source_billing_nodes:
+            source_node_uuid = source_billing_node.get("nodeUuid")
+            source_provider_uuid = source_billing_node.get("providerUuid")
+            if not isinstance(source_node_uuid, str) or not isinstance(source_provider_uuid, str):
+                continue
+
+            dest_node_uuid = node_mapping.get(source_node_uuid)
+            if not dest_node_uuid:
+                LOGGER.warning(
+                    "SKIP infra billing node source_node_uuid=%s reason=node_not_synced",
+                    source_node_uuid,
+                )
+                continue
+
+            dest_provider_uuid = provider_mapping.get(source_provider_uuid)
+            if not dest_provider_uuid:
+                LOGGER.warning(
+                    "SKIP infra billing node source_node_uuid=%s reason=provider_not_synced source_provider_uuid=%s",
+                    source_node_uuid,
+                    source_provider_uuid,
+                )
+                continue
+
+            payload = map_infra_billing_node_payload(
+                source_billing_node,
+                dest_provider_uuid=dest_provider_uuid,
+                dest_node_uuid=dest_node_uuid,
+            )
+            dest_billing_node = dest_by_node_uuid.get(dest_node_uuid)
+
+            try:
+                if dest_billing_node is None:
+                    if self.dry_run:
+                        LOGGER.info(
+                            "CREATE infra billing node source_node_uuid=%s dest_node_uuid=%s",
+                            source_node_uuid,
+                            dest_node_uuid,
+                        )
+                    else:
+                        self.dst.create_infra_billing_node(payload)
+                        self.summary.infra_billing_nodes_created += 1
+                        LOGGER.info(
+                            "created infra billing node source_node_uuid=%s dest_node_uuid=%s",
+                            source_node_uuid,
+                            dest_node_uuid,
+                        )
+                    continue
+
+                current_provider_uuid = dest_billing_node.get("providerUuid")
+                current_next_billing_at = dest_billing_node.get("nextBillingAt")
+                desired_next_billing_at = payload.get("nextBillingAt")
+
+                if current_provider_uuid != dest_provider_uuid:
+                    if self.dry_run:
+                        LOGGER.info(
+                            "RECREATE infra billing node source_node_uuid=%s dest_node_uuid=%s reason=provider_changed",
+                            source_node_uuid,
+                            dest_node_uuid,
+                        )
+                    else:
+                        self.dst.delete_infra_billing_node(dest_billing_node["uuid"])
+                        self.dst.create_infra_billing_node(payload)
+                        self.summary.infra_billing_nodes_deleted += 1
+                        self.summary.infra_billing_nodes_created += 1
+                        LOGGER.info(
+                            "recreated infra billing node source_node_uuid=%s dest_node_uuid=%s reason=provider_changed",
+                            source_node_uuid,
+                            dest_node_uuid,
+                        )
+                    continue
+
+                if current_next_billing_at != desired_next_billing_at and isinstance(desired_next_billing_at, str):
+                    if self.dry_run:
+                        LOGGER.info(
+                            "UPDATE infra billing node source_node_uuid=%s dest_node_uuid=%s fields=%s",
+                            source_node_uuid,
+                            dest_node_uuid,
+                            ["nextBillingAt"],
+                        )
+                    else:
+                        self.dst.update_infra_billing_nodes([dest_billing_node["uuid"]], desired_next_billing_at)
+                        self.summary.infra_billing_nodes_updated += 1
+                        LOGGER.info(
+                            "updated infra billing node source_node_uuid=%s dest_node_uuid=%s",
+                            source_node_uuid,
+                            dest_node_uuid,
+                        )
+                else:
+                    LOGGER.info(
+                        "skipped infra billing node source_node_uuid=%s dest_node_uuid=%s reason=no_changes",
+                        source_node_uuid,
+                        dest_node_uuid,
+                    )
+            except Exception as exc:
+                self.summary.errors += 1
+                LOGGER.exception("failed syncing infra billing node for source node %s: %s", source_node_uuid, exc)
+
+        for dest_billing_node in dest_billing_nodes:
+            dest_node_uuid = dest_billing_node.get("nodeUuid")
+            if not isinstance(dest_node_uuid, str):
+                continue
+
+            source_node_uuid = reverse_node_mapping.get(dest_node_uuid)
+            if not source_node_uuid:
+                continue
+            if source_node_uuid in source_by_node_uuid:
+                continue
+
+            try:
+                if self.dry_run:
+                    LOGGER.info(
+                        "DELETE missing infra billing node source_node_uuid=%s dest_node_uuid=%s",
+                        source_node_uuid,
+                        dest_node_uuid,
+                    )
+                else:
+                    self.dst.delete_infra_billing_node(dest_billing_node["uuid"])
+                    self.summary.infra_billing_nodes_deleted += 1
+                    LOGGER.info(
+                        "deleted missing infra billing node source_node_uuid=%s dest_node_uuid=%s",
+                        source_node_uuid,
+                        dest_node_uuid,
+                    )
+            except Exception as exc:
+                self.summary.errors += 1
+                LOGGER.exception("failed deleting missing infra billing node for source node %s: %s", source_node_uuid, exc)
+
+
 def configure_logging(level: str) -> None:
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
@@ -1964,6 +2257,18 @@ def main() -> int:
                 dst_inbound_by_fingerprint=dst_inbound_by_fingerprint,
             )
             node_service.sync()
+            try:
+                infra_billing_service = InfraBillingSyncService(
+                    src=src_client,
+                    dst=dst_client,
+                    state_store=state_store,
+                    summary=summary,
+                    dry_run=config.dry_run,
+                )
+                infra_billing_service.sync()
+            except Exception as exc:
+                summary.errors += 1
+                LOGGER.exception("failed syncing infra billing for nodes: %s", exc)
 
         if not config.dry_run:
             state_store.save()
@@ -1978,7 +2283,7 @@ def main() -> int:
         dst_client.close()
 
     LOGGER.info(
-        "summary squads_created=%s squads_updated=%s users_created=%s users_updated=%s users_disabled=%s users_deleted=%s nodes_created=%s nodes_updated=%s errors=%s",
+        "summary squads_created=%s squads_updated=%s users_created=%s users_updated=%s users_disabled=%s users_deleted=%s nodes_created=%s nodes_updated=%s infra_providers_created=%s infra_providers_updated=%s infra_billing_nodes_created=%s infra_billing_nodes_updated=%s infra_billing_nodes_deleted=%s errors=%s",
         summary.squads_created,
         summary.squads_updated,
         summary.users_created,
@@ -1987,6 +2292,11 @@ def main() -> int:
         summary.users_deleted,
         summary.nodes_created,
         summary.nodes_updated,
+        summary.infra_providers_created,
+        summary.infra_providers_updated,
+        summary.infra_billing_nodes_created,
+        summary.infra_billing_nodes_updated,
+        summary.infra_billing_nodes_deleted,
         summary.errors,
     )
     return 0 if summary.errors == 0 else 1

@@ -16,6 +16,7 @@ It can sync:
 - squads
 - users
 - nodes, only if you enable node sync
+- infra billing providers and node billing records together with node sync
 
 ### What You Need
 
@@ -158,6 +159,8 @@ remnasync --dry-run
 - The app also sends `X-Api-Key` for compatibility with some deployments
 - Squad metadata is not available in the current official Remnawave OpenAPI, so squad identity falls back to the state file
 - User and node metadata are synced through official metadata endpoints when available
+- Infra billing sync uses the official `infra-billing/providers` and `infra-billing/nodes` API routes
+- Infra billing history records are not mirrored automatically
 
 ---
 
@@ -177,6 +180,7 @@ remnasync --dry-run
 - squads
 - users
 - nodes, только если вы включите синхронизацию нод
+- infra billing providers и billing records нод вместе с node sync
 
 ### Что Нужно Подготовить
 
@@ -319,3 +323,5 @@ remnasync --dry-run
 - Дополнительно программа отправляет `X-Api-Key` для совместимости с некоторыми установками
 - Для `squads` в текущем официальном OpenAPI Remnawave нет metadata endpoints, поэтому используется fallback через state file
 - Для `users` и `nodes` metadata синхронизируется через официальные endpoints, если они доступны
+- Infra billing синхронизируется через официальные routes `infra-billing/providers` и `infra-billing/nodes`
+- История infra billing платежей автоматически не зеркалируется
