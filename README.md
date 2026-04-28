@@ -142,6 +142,8 @@ You can also add one or more S3-compatible accounts from the same menu. For S3 y
 - access key
 - secret key
 
+While entering backup settings, type `q`, `back`, or `exit` to cancel and return to the menu. The backup menu also lets you view configured accounts, delete S3 accounts, and set a retention period for old local/S3 backups. Retention is disabled by default; set it to `0` to keep it disabled.
+
 The same backup menu can configure Telegram notifications. You need:
 
 - `BOT_TOKEN` from `@BotFather`, for example `123456789:ABC...`
@@ -369,6 +371,8 @@ remnasync
 - prefix
 - access key
 - secret key
+
+Во время ввода backup-настроек можно ввести `q`, `й`, `back` или `exit`, чтобы отменить действие и вернуться в меню. В меню бекапера также можно посмотреть текущие аккаунты, удалить S3 аккаунт и настроить retention для старых локальных/S3 бекапов. Retention по умолчанию отключен; значение `0` оставляет его выключенным.
 
 В этом же меню можно настроить Telegram уведомления. Для этого нужны:
 

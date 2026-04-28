@@ -17,7 +17,7 @@ import tarfile
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping, TextIO
 
@@ -81,6 +81,8 @@ I18N: dict[str, dict[str, str]] = {
         "integer_required": "Please enter an integer.",
         "number_required": "Please enter a number.",
         "time_invalid": "Invalid time list. Use values like: 03:00 04:00 12:00 23:59",
+        "input_cancel_hint": "Type q, back, or exit to cancel.",
+        "action_cancelled": "Action cancelled.",
         "menu_title": "SyncRemnawave menu",
         "menu_prompt": "Choose an action",
         "menu_sync_now": "Start synchronization now",
@@ -109,7 +111,20 @@ I18N: dict[str, dict[str, str]] = {
         "backup_restore": "Restore backup",
         "backup_list": "List backups",
         "backup_add_s3": "Add S3 account",
+        "backup_view_accounts": "View configured backup accounts",
+        "backup_delete_s3": "Delete S3 account",
+        "backup_set_retention": "Set backup retention",
         "backup_setup_telegram": "Configure Telegram notifications",
+        "backup_accounts_title": "Configured backup accounts",
+        "backup_s3_none": "No S3 accounts configured.",
+        "backup_telegram_status": "Telegram: {status}",
+        "backup_retention_status": "Retention: {days}",
+        "backup_retention_days": "Delete backups older than N days (0 disables retention)",
+        "backup_retention_saved": "Retention saved: {days}",
+        "backup_retention_disabled": "disabled",
+        "backup_retention_applied": "Retention applied.",
+        "backup_delete_s3_select": "S3 account number to delete",
+        "backup_s3_deleted": "S3 account deleted: {name}",
         "backup_panel_path": "Panel path",
         "backup_local_only": "No S3 accounts configured. Backup will be saved locally only.",
         "backup_created": "Backup created: {path}",
@@ -193,6 +208,8 @@ I18N: dict[str, dict[str, str]] = {
         "integer_required": "Введите целое число.",
         "number_required": "Введите число.",
         "time_invalid": "Неверный список времени. Используйте формат: 03:00 04:00 12:00 23:59",
+        "input_cancel_hint": "Введите q, й, back или exit для отмены.",
+        "action_cancelled": "Действие отменено.",
         "menu_title": "Меню SyncRemnawave",
         "menu_prompt": "Выберите действие",
         "menu_sync_now": "Запустить синхронизацию сейчас",
@@ -221,7 +238,20 @@ I18N: dict[str, dict[str, str]] = {
         "backup_restore": "Восстановить из бекапа",
         "backup_list": "Показать список бекапов",
         "backup_add_s3": "Добавить S3 аккаунт",
+        "backup_view_accounts": "Показать текущие backup аккаунты",
+        "backup_delete_s3": "Удалить S3 аккаунт",
+        "backup_set_retention": "Настроить retention бекапов",
         "backup_setup_telegram": "Настроить Telegram уведомления",
+        "backup_accounts_title": "Текущие backup аккаунты",
+        "backup_s3_none": "S3 аккаунты не настроены.",
+        "backup_telegram_status": "Telegram: {status}",
+        "backup_retention_status": "Retention: {days}",
+        "backup_retention_days": "Удалять бекапы старше N дней (0 отключает retention)",
+        "backup_retention_saved": "Retention сохранен: {days}",
+        "backup_retention_disabled": "отключен",
+        "backup_retention_applied": "Retention применен.",
+        "backup_delete_s3_select": "Номер S3 аккаунта для удаления",
+        "backup_s3_deleted": "S3 аккаунт удален: {name}",
         "backup_panel_path": "Путь к панели",
         "backup_local_only": "S3 аккаунты не настроены. Бекап будет сохранен только локально.",
         "backup_created": "Бекап создан: {path}",
@@ -268,6 +298,10 @@ I18N: dict[str, dict[str, str]] = {
 
 
 class SyncError(Exception):
+    pass
+
+
+class UserCancelled(SyncError):
     pass
 
 
@@ -482,6 +516,59 @@ def prompt_float(label: str, default: float, language: str = "ru") -> float:
             print(tr(language, "number_required"))
 
 
+CANCEL_INPUTS = {"q", "quit", "exit", "back", "cancel", "й", "назад", "отмена", "выход"}
+
+
+def is_cancel_input(value: str) -> bool:
+    return value.strip().lower() in CANCEL_INPUTS
+
+
+def prompt_text_cancelable(label: str, default: str | None = None, language: str = "ru") -> str:
+    print(tr(language, "input_cancel_hint"))
+    suffix = f" [{default}]" if default else ""
+    while True:
+        value = read_prompt_line(f"{label}{suffix}: ").strip()
+        if is_cancel_input(value):
+            raise UserCancelled(tr(language, "action_cancelled"))
+        if value:
+            return value
+        if default is not None:
+            return default
+        print(tr(language, "value_required"))
+
+
+def prompt_secret_cancelable(label: str, has_default: bool = False, language: str = "ru") -> str:
+    print(tr(language, "input_cancel_hint"))
+    suffix = " [saved]" if has_default else ""
+    while True:
+        try:
+            with open_console_streams() as (_, console_out):
+                value = getpass.getpass(f"{label}{suffix}: ", stream=console_out).strip()
+        except (EOFError, KeyboardInterrupt) as exc:
+            raise SyncError("Interactive setup was cancelled.") from exc
+        if is_cancel_input(value):
+            raise UserCancelled(tr(language, "action_cancelled"))
+        if value:
+            return value
+        if has_default:
+            return ""
+        print(tr(language, "value_required"))
+
+
+def prompt_int_cancelable(label: str, default: int, language: str = "ru") -> int:
+    print(tr(language, "input_cancel_hint"))
+    while True:
+        value = read_prompt_line(f"{label} [{default}]: ").strip()
+        if is_cancel_input(value):
+            raise UserCancelled(tr(language, "action_cancelled"))
+        if not value:
+            return default
+        try:
+            return int(value)
+        except ValueError:
+            print(tr(language, "integer_required"))
+
+
 def write_env_file(path: Path, values: Mapping[str, str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     content = "\n".join(f"{key}={env_escape(value)}" for key, value in values.items()) + "\n"
@@ -633,6 +720,7 @@ class BackupManager:
             "local_backup_dir": str(default_backup_dir()),
             "s3_accounts": [],
             "telegram": {"bot_token": "", "chat_id": "", "topic_id": ""},
+            "retention_days": 0,
         }
 
     def _save_config(self) -> None:
@@ -699,13 +787,13 @@ class BackupManager:
         print()
         print(tr(self.language, "backup_add_s3_title"))
         account = {
-            "name": prompt_text(tr(self.language, "backup_s3_name"), "default", self.language),
-            "endpoint_url": prompt_text(tr(self.language, "backup_s3_endpoint"), "", self.language),
-            "region": prompt_text(tr(self.language, "backup_s3_region"), "us-east-1", self.language),
-            "bucket": prompt_text(tr(self.language, "backup_s3_bucket"), None, self.language),
-            "prefix": prompt_text(tr(self.language, "backup_s3_prefix"), "syncremnawave", self.language).strip("/"),
-            "access_key": prompt_secret(tr(self.language, "backup_s3_access_key"), language=self.language),
-            "secret_key": prompt_secret(tr(self.language, "backup_s3_secret_key"), language=self.language),
+            "name": prompt_text_cancelable(tr(self.language, "backup_s3_name"), "default", self.language),
+            "endpoint_url": prompt_text_cancelable(tr(self.language, "backup_s3_endpoint"), "", self.language),
+            "region": prompt_text_cancelable(tr(self.language, "backup_s3_region"), "us-east-1", self.language),
+            "bucket": prompt_text_cancelable(tr(self.language, "backup_s3_bucket"), None, self.language),
+            "prefix": prompt_text_cancelable(tr(self.language, "backup_s3_prefix"), "syncremnawave", self.language).strip("/"),
+            "access_key": prompt_secret_cancelable(tr(self.language, "backup_s3_access_key"), language=self.language),
+            "secret_key": prompt_secret_cancelable(tr(self.language, "backup_s3_secret_key"), language=self.language),
         }
         self.config.setdefault("s3_accounts", []).append(account)
         self._save_config()
@@ -717,12 +805,12 @@ class BackupManager:
         existing = self.config.get("telegram", {})
         existing = existing if isinstance(existing, dict) else {}
         bot_token = validate_telegram_bot_token(
-            prompt_text(tr(self.language, "telegram_token"), str(existing.get("bot_token") or "") or None, self.language),
+            prompt_text_cancelable(tr(self.language, "telegram_token"), str(existing.get("bot_token") or "") or None, self.language),
             self.language,
         )
         print(tr(self.language, "telegram_token_preview", token=bot_token))
-        chat_id = prompt_text(tr(self.language, "telegram_chat_id"), str(existing.get("chat_id") or "") or None, self.language)
-        topic_id = prompt_text(tr(self.language, "telegram_topic_id"), str(existing.get("topic_id") or ""), self.language)
+        chat_id = prompt_text_cancelable(tr(self.language, "telegram_chat_id"), str(existing.get("chat_id") or "") or None, self.language)
+        topic_id = prompt_text_cancelable(tr(self.language, "telegram_topic_id"), str(existing.get("topic_id") or ""), self.language)
 
         telegram_config = {
             "bot_token": bot_token,
@@ -759,9 +847,98 @@ class BackupManager:
             else:
                 self.config["telegram"] = old_telegram
 
+    def retention_days(self) -> int:
+        try:
+            return max(0, int(self.config.get("retention_days") or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    def configure_retention(self) -> None:
+        days = prompt_int_cancelable(tr(self.language, "backup_retention_days"), self.retention_days(), self.language)
+        self.config["retention_days"] = max(0, days)
+        self._save_config()
+        status = tr(self.language, "backup_retention_disabled") if days <= 0 else f"{days} days"
+        print(tr(self.language, "backup_retention_saved", days=status))
+
+    def show_accounts(self) -> None:
+        print()
+        print(tr(self.language, "backup_accounts_title"))
+        accounts = self.config.get("s3_accounts", [])
+        if accounts:
+            for index, account in enumerate(accounts, start=1):
+                endpoint = account.get("endpoint_url") or "AWS"
+                prefix = account.get("prefix") or ""
+                print(
+                    f"{index}. S3 {account.get('name', 'default')} "
+                    f"bucket={account.get('bucket', '')} prefix={prefix} region={account.get('region', '')} endpoint={endpoint}"
+                )
+        else:
+            print(tr(self.language, "backup_s3_none"))
+
+        telegram = self.config.get("telegram", {})
+        telegram_enabled = isinstance(telegram, dict) and bool(telegram.get("bot_token")) and bool(telegram.get("chat_id"))
+        print(tr(self.language, "backup_telegram_status", status=tr(self.language, "setting_on") if telegram_enabled else tr(self.language, "setting_off")))
+        if telegram_enabled:
+            print(f"  BOT_TOKEN={telegram.get('bot_token')}")
+            print(f"  CHAT_ID={telegram.get('chat_id')}")
+            if telegram.get("topic_id"):
+                print(f"  TOPIC_ID={telegram.get('topic_id')}")
+
+        retention = self.retention_days()
+        retention_status = tr(self.language, "backup_retention_disabled") if retention <= 0 else f"{retention} days"
+        print(tr(self.language, "backup_retention_status", days=retention_status))
+
+    def delete_s3_account(self) -> None:
+        accounts = self.config.get("s3_accounts", [])
+        if not accounts:
+            print(tr(self.language, "backup_s3_none"))
+            return
+        self.show_accounts()
+        selected = prompt_int_cancelable(tr(self.language, "backup_delete_s3_select"), 1, self.language)
+        if selected < 1 or selected > len(accounts):
+            print(tr(self.language, "menu_invalid"))
+            return
+        removed = accounts.pop(selected - 1)
+        self.config["s3_accounts"] = accounts
+        self._save_config()
+        print(tr(self.language, "backup_s3_deleted", name=removed.get("name", "S3")))
+
+    def apply_retention(self) -> None:
+        days = self.retention_days()
+        if days <= 0:
+            return
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        backup_dir = Path(self.config.get("local_backup_dir") or str(default_backup_dir())).expanduser()
+        if backup_dir.exists():
+            for path in backup_dir.glob("remnawave_panel_*.tar.gz"):
+                modified = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+                if modified < cutoff:
+                    try:
+                        path.unlink()
+                    except OSError as exc:
+                        LOGGER.warning("failed deleting old local backup %s: %s", path, exc)
+
+        for account in self.config.get("s3_accounts", []):
+            try:
+                client = self._s3_client(account)
+                prefix = str(account.get("prefix") or "").strip("/")
+                response = client.list_objects_v2(Bucket=account["bucket"], Prefix=f"{prefix}/" if prefix else "")
+                for obj in response.get("Contents", []) or []:
+                    key = obj.get("Key")
+                    last_modified = obj.get("LastModified")
+                    if not isinstance(key, str) or "remnawave_panel_" not in key or not key.endswith(".tar.gz"):
+                        continue
+                    if last_modified and getattr(last_modified, "tzinfo", None) is None:
+                        last_modified = last_modified.replace(tzinfo=timezone.utc)
+                    if last_modified and last_modified < cutoff:
+                        client.delete_object(Bucket=account["bucket"], Key=key)
+            except Exception as exc:
+                LOGGER.warning("failed applying S3 retention for account %s: %s", account.get("name"), exc)
+        print(tr(self.language, "backup_retention_applied"))
+
     def ask_panel_path(self) -> Path:
         current = self.config.get("panel_path") or "/opt/remnawave"
-        panel_path = Path(prompt_text(tr(self.language, "backup_panel_path"), str(current), self.language)).expanduser()
+        panel_path = Path(prompt_text_cancelable(tr(self.language, "backup_panel_path"), str(current), self.language)).expanduser()
         self.config["panel_path"] = str(panel_path)
         self._save_config()
         return panel_path
@@ -795,6 +972,7 @@ class BackupManager:
         if not accounts:
             print(tr(self.language, "backup_local_only"))
             self.send_telegram_message(f"BACKUP SUCCESS\nPath: {panel_path}\nFile: {archive_path.name}\nStorage: local only", success=True)
+            self.apply_retention()
             return archive_path
 
         upload_errors: list[str] = []
@@ -824,6 +1002,7 @@ class BackupManager:
                 f"BACKUP SUCCESS\nPath: {panel_path}\nFile: {archive_path.name}\nS3 accounts: {len(accounts)}",
                 success=True,
             )
+        self.apply_retention()
         return archive_path
 
     def list_backups(self) -> list[dict[str, Any]]:
@@ -909,7 +1088,7 @@ class BackupManager:
         items = self.print_backups()
         if not items:
             return False
-        selected = prompt_int(tr(self.language, "backup_select"), 1, self.language)
+        selected = prompt_int_cancelable(tr(self.language, "backup_select"), 1, self.language)
         if selected < 1 or selected > len(items):
             print(tr(self.language, "menu_invalid"))
             return False
@@ -956,8 +1135,11 @@ def run_backup_restore_menu(language: str) -> bool:
                 tr(language, "backup_create"),
                 tr(language, "backup_restore"),
                 tr(language, "backup_list"),
+                tr(language, "backup_view_accounts"),
                 tr(language, "backup_add_s3"),
+                tr(language, "backup_delete_s3"),
                 tr(language, "backup_setup_telegram"),
+                tr(language, "backup_set_retention"),
                 tr(language, "menu_back"),
             ],
             language,
@@ -971,16 +1153,25 @@ def run_backup_restore_menu(language: str) -> bool:
             elif selected == 3:
                 manager.print_backups()
             elif selected == 4:
-                manager.configure_s3_account()
+                manager.show_accounts()
             elif selected == 5:
+                manager.configure_s3_account()
+            elif selected == 6:
+                manager.delete_s3_account()
+            elif selected == 7:
                 manager.configure_telegram()
+            elif selected == 8:
+                manager.configure_retention()
             else:
                 return False
         except Exception as exc:
-            LOGGER.exception("backup/restore action failed: %s", exc)
-            if selected in {1, 2}:
-                manager.send_telegram_message(f"BACKUP/RESTORE FAILED\nError: {exc}", success=False)
-            print(f"ERROR: {exc}")
+            if isinstance(exc, UserCancelled):
+                print(tr(language, "action_cancelled"))
+            else:
+                LOGGER.exception("backup/restore action failed: %s", exc)
+                if selected in {1, 2}:
+                    manager.send_telegram_message(f"BACKUP/RESTORE FAILED\nError: {exc}", success=False)
+                print(f"ERROR: {exc}")
 
 
 def installed_git_metadata() -> tuple[str, str, str | None]:
