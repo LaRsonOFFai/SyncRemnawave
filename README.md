@@ -70,6 +70,8 @@ When you run `remnasync` in an interactive terminal with no extra arguments, it 
 - quickly toggle saved options such as node sync on or off
 - check for app updates and install them
 
+Pressing `Ctrl+C` once returns you to the main menu instead of showing a traceback. Press `Ctrl+C` three times quickly to exit the program.
+
 Compatibility alias:
 
 ```bash
@@ -299,6 +301,8 @@ remnasync
 - открыть полный мастер настройки
 - быстро переключить сохранённые опции, например включить или выключить синхронизацию nodes
 - проверить обновления программы и установить их
+
+Одно нажатие `Ctrl+C` возвращает в главное меню без traceback. Чтобы закрыть программу, нажмите `Ctrl+C` три раза быстро.
 
 Совместимый алиас тоже оставлен:
 

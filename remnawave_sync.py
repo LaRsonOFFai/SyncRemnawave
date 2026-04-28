@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -37,7 +38,10 @@ SOURCE_PANEL_LABEL = "A"
 APP_NAME = "SyncRemnawave"
 PACKAGE_NAME = "syncremnawave"
 DEFAULT_REPO_URL = "https://github.com/LaRsonOFFai/SyncRemnawave.git"
+CTRL_C_EXIT_COUNT = 3
+CTRL_C_WINDOW_SECONDS = 2.0
 TIME_PATTERN = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+CTRL_C_TIMES: list[float] = []
 
 I18N: dict[str, dict[str, str]] = {
     "en": {
@@ -83,6 +87,8 @@ I18N: dict[str, dict[str, str]] = {
         "time_invalid": "Invalid time list. Use values like: 03:00 04:00 12:00 23:59",
         "input_cancel_hint": "Type q, back, or exit to cancel.",
         "action_cancelled": "Action cancelled.",
+        "ctrl_c_return_menu": "Interrupted. Returning to the main menu. Press Ctrl+C 3 times quickly to exit.",
+        "ctrl_c_exit": "Exiting SyncRemnawave.",
         "menu_title": "SyncRemnawave menu",
         "menu_prompt": "Choose an action",
         "menu_sync_now": "Start synchronization now",
@@ -210,6 +216,8 @@ I18N: dict[str, dict[str, str]] = {
         "time_invalid": "Неверный список времени. Используйте формат: 03:00 04:00 12:00 23:59",
         "input_cancel_hint": "Введите q, й, back или exit для отмены.",
         "action_cancelled": "Действие отменено.",
+        "ctrl_c_return_menu": "Прервано. Возвращаю в главное меню. Нажмите Ctrl+C 3 раза быстро, чтобы выйти.",
+        "ctrl_c_exit": "Выход из SyncRemnawave.",
         "menu_title": "Меню SyncRemnawave",
         "menu_prompt": "Выберите действие",
         "menu_sync_now": "Запустить синхронизацию сейчас",
@@ -302,6 +310,14 @@ class SyncError(Exception):
 
 
 class UserCancelled(SyncError):
+    pass
+
+
+class ReturnToMainMenu(UserCancelled):
+    pass
+
+
+class UserRequestedExit(UserCancelled):
     pass
 
 
@@ -449,7 +465,10 @@ def read_prompt_line(prompt: str) -> str:
     with open_console_streams() as (console_in, console_out):
         console_out.write(prompt)
         console_out.flush()
-        line = console_in.readline()
+        try:
+            line = console_in.readline()
+        except KeyboardInterrupt:
+            register_ctrl_c()
     if line == "":
         raise SyncError("Interactive setup was cancelled because no terminal input is available.")
     return line.rstrip("\r\n")
@@ -472,7 +491,9 @@ def prompt_secret(label: str, has_default: bool = False, language: str = "ru") -
         try:
             with open_console_streams() as (_, console_out):
                 value = getpass.getpass(f"{label}{suffix}: ", stream=console_out).strip()
-        except (EOFError, KeyboardInterrupt) as exc:
+        except KeyboardInterrupt:
+            register_ctrl_c()
+        except EOFError as exc:
             raise SyncError("Interactive setup was cancelled.") from exc
         if value:
             return value
@@ -544,7 +565,9 @@ def prompt_secret_cancelable(label: str, has_default: bool = False, language: st
         try:
             with open_console_streams() as (_, console_out):
                 value = getpass.getpass(f"{label}{suffix}: ", stream=console_out).strip()
-        except (EOFError, KeyboardInterrupt) as exc:
+        except KeyboardInterrupt:
+            register_ctrl_c()
+        except EOFError as exc:
             raise SyncError("Interactive setup was cancelled.") from exc
         if is_cancel_input(value):
             raise UserCancelled(tr(language, "action_cancelled"))
@@ -611,6 +634,16 @@ def prompt_sync_times(label: str, default: list[str], language: str) -> list[str
             return normalize_sync_times(raw_value)
         except ValueError:
             print(tr(language, "time_invalid"))
+
+
+def register_ctrl_c() -> None:
+    now = time.monotonic()
+    CTRL_C_TIMES[:] = [timestamp for timestamp in CTRL_C_TIMES if now - timestamp <= CTRL_C_WINDOW_SECONDS]
+    CTRL_C_TIMES.append(now)
+    if len(CTRL_C_TIMES) >= CTRL_C_EXIT_COUNT:
+        CTRL_C_TIMES.clear()
+        raise UserRequestedExit()
+    raise ReturnToMainMenu()
 
 
 def prompt_menu_choice(title: str, options: list[str], language: str) -> int:
@@ -1164,6 +1197,8 @@ def run_backup_restore_menu(language: str) -> bool:
                 manager.configure_retention()
             else:
                 return False
+        except (ReturnToMainMenu, UserRequestedExit):
+            raise
         except Exception as exc:
             if isinstance(exc, UserCancelled):
                 print(tr(language, "action_cancelled"))
@@ -1271,43 +1306,52 @@ def run_interactive_menu(config_file: Path) -> tuple[str, bool]:
         language = "ru"
 
     while True:
-        options = [
-            tr(language, "menu_sync_now"),
-            tr(language, "menu_dry_run"),
-            tr(language, "menu_backup_restore"),
-            tr(language, "menu_quick_settings"),
-            tr(language, "menu_full_setup"),
-            tr(language, "menu_update"),
-            tr(language, "menu_exit"),
-        ]
-        selected = prompt_menu_choice(tr(language, "menu_title"), options, language)
-        if selected == 1:
-            return "sync", False
-        if selected == 2:
-            return "sync", True
-        if selected == 3:
-            if run_backup_restore_menu(language):
+        try:
+            options = [
+                tr(language, "menu_sync_now"),
+                tr(language, "menu_dry_run"),
+                tr(language, "menu_backup_restore"),
+                tr(language, "menu_quick_settings"),
+                tr(language, "menu_full_setup"),
+                tr(language, "menu_update"),
+                tr(language, "menu_exit"),
+            ]
+            selected = prompt_menu_choice(tr(language, "menu_title"), options, language)
+            if selected == 1:
                 return "sync", False
+            if selected == 2:
+                return "sync", True
+            if selected == 3:
+                if run_backup_restore_menu(language):
+                    return "sync", False
+                continue
+            if selected == 4:
+                quick_toggle_settings(config_file, language)
+                env_data = load_existing_env(config_file)
+                language = env_data.get("LANGUAGE", language).strip().lower() if env_data.get("LANGUAGE") else language
+                if language not in {"ru", "en"}:
+                    language = "ru"
+                continue
+            if selected == 5:
+                run_setup_wizard(config_file)
+                env_data = load_existing_env(config_file)
+                language = env_data.get("LANGUAGE", language).strip().lower() if env_data.get("LANGUAGE") else language
+                if language not in {"ru", "en"}:
+                    language = "ru"
+                continue
+            if selected == 6:
+                if run_self_update(language):
+                    return "exit", False
+                continue
+            return "exit", False
+        except ReturnToMainMenu:
+            print()
+            print(tr(language, "ctrl_c_return_menu"))
             continue
-        if selected == 4:
-            quick_toggle_settings(config_file, language)
-            env_data = load_existing_env(config_file)
-            language = env_data.get("LANGUAGE", language).strip().lower() if env_data.get("LANGUAGE") else language
-            if language not in {"ru", "en"}:
-                language = "ru"
-            continue
-        if selected == 5:
-            run_setup_wizard(config_file)
-            env_data = load_existing_env(config_file)
-            language = env_data.get("LANGUAGE", language).strip().lower() if env_data.get("LANGUAGE") else language
-            if language not in {"ru", "en"}:
-                language = "ru"
-            continue
-        if selected == 6:
-            if run_self_update(language):
-                return "exit", False
-            continue
-        return "exit", False
+        except UserRequestedExit:
+            print()
+            print(tr(language, "ctrl_c_exit"))
+            return "exit", False
 
 
 def cron_command(config_file: Path) -> str:
