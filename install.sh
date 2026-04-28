@@ -2,6 +2,7 @@
 set -euo pipefail
 
 REPO_URL="${SYNCREMNAWAVE_REPO:-https://github.com/LaRsonOFFai/SyncRemnawave.git}"
+REPO_REF="${SYNCREMNAWAVE_REF:-dev}"
 INSTALL_ROOT="${HOME}/.local/share/SyncRemnawave"
 USER_BIN_DIR="${HOME}/.local/bin"
 PREFERRED_BIN_DIR="/usr/local/bin"
@@ -23,7 +24,7 @@ fi
 mkdir -p "${INSTALL_ROOT}" "${USER_BIN_DIR}" "${BIN_DIR}"
 python3 -m venv "${VENV_DIR}"
 "${VENV_DIR}/bin/pip" install --upgrade pip
-"${VENV_DIR}/bin/pip" install --upgrade --force-reinstall --no-cache-dir "git+${REPO_URL}"
+"${VENV_DIR}/bin/pip" install --upgrade --force-reinstall --no-cache-dir "git+${REPO_URL}@${REPO_REF}"
 
 cat > "${BIN_DIR}/remnasync" <<EOF
 #!/usr/bin/env bash
@@ -39,6 +40,7 @@ chmod +x "${BIN_DIR}/sync-remnawave"
 
 echo
 echo "SyncRemnawave installed."
+echo "Installed from: ${REPO_URL}@${REPO_REF}"
 echo "Command directory: ${BIN_DIR}"
 if command -v remnasync >/dev/null 2>&1; then
   echo "Command available as: $(command -v remnasync)"
