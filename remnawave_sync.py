@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import io
+from importlib import metadata as importlib_metadata
 import json
 import locale
 import logging
@@ -34,6 +35,8 @@ from tenacity import (
 LOGGER = logging.getLogger("remnawave_sync")
 SOURCE_PANEL_LABEL = "A"
 APP_NAME = "SyncRemnawave"
+PACKAGE_NAME = "syncremnawave"
+DEFAULT_REPO_URL = "https://github.com/LaRsonOFFai/SyncRemnawave.git"
 TIME_PATTERN = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 
 I18N: dict[str, dict[str, str]] = {
@@ -84,6 +87,7 @@ I18N: dict[str, dict[str, str]] = {
         "menu_dry_run": "Run dry-run",
         "menu_quick_settings": "Quick settings",
         "menu_full_setup": "Open full setup wizard",
+        "menu_update": "Update SyncRemnawave",
         "menu_exit": "Exit",
         "menu_back": "Back",
         "menu_invalid": "Please enter one of the listed numbers.",
@@ -125,6 +129,16 @@ I18N: dict[str, dict[str, str]] = {
         "backup_s3_saved": "S3 account saved.",
         "backup_offer_sync": "Backup is older than 24 hours. Start panel sync now",
         "backup_sync_after_restore": "Start panel sync now",
+        "update_checking": "Checking for updates...",
+        "update_source": "Update source: {repo}@{ref}",
+        "update_current": "Installed commit: {commit}",
+        "update_latest": "Latest commit: {commit}",
+        "update_not_installed_from_git": "Installed Git metadata was not found. The updater will reinstall from the default repository.",
+        "update_already_latest": "SyncRemnawave is already up to date.",
+        "update_installing": "Installing update...",
+        "update_installed": "Update installed. Please restart remnasync to use the new version.",
+        "update_failed": "Update failed: {error}",
+        "update_git_missing": "Git is not available, so the updater cannot check the latest commit. Reinstalling anyway.",
     },
     "ru": {
         "wizard_title": "Мастер настройки SyncRemnawave",
@@ -173,6 +187,7 @@ I18N: dict[str, dict[str, str]] = {
         "menu_dry_run": "Запустить dry-run",
         "menu_quick_settings": "Быстрые настройки",
         "menu_full_setup": "Открыть полный мастер настройки",
+        "menu_update": "Обновить SyncRemnawave",
         "menu_exit": "Выход",
         "menu_back": "Назад",
         "menu_invalid": "Введите один из предложенных номеров.",
@@ -214,6 +229,16 @@ I18N: dict[str, dict[str, str]] = {
         "backup_s3_saved": "S3 аккаунт сохранен.",
         "backup_offer_sync": "Бекап старше 24 часов. Запустить синхронизацию панелей сейчас",
         "backup_sync_after_restore": "Запустить синхронизацию панелей сейчас",
+        "update_checking": "Проверяю обновления...",
+        "update_source": "Источник обновления: {repo}@{ref}",
+        "update_current": "Установленный commit: {commit}",
+        "update_latest": "Последний commit: {commit}",
+        "update_not_installed_from_git": "Git metadata установленного пакета не найден. Обновлятор переустановит программу из стандартного репозитория.",
+        "update_already_latest": "SyncRemnawave уже обновлен до последней версии.",
+        "update_installing": "Устанавливаю обновление...",
+        "update_installed": "Обновление установлено. Перезапустите remnasync, чтобы использовать новую версию.",
+        "update_failed": "Не удалось обновиться: {error}",
+        "update_git_missing": "Git недоступен, поэтому проверить последний commit нельзя. Всё равно запускаю переустановку.",
     },
 }
 
@@ -814,6 +839,89 @@ def run_backup_restore_menu(language: str) -> bool:
             print(f"ERROR: {exc}")
 
 
+def installed_git_metadata() -> tuple[str, str, str | None]:
+    try:
+        distribution = importlib_metadata.distribution(PACKAGE_NAME)
+        direct_url_raw = distribution.read_text("direct_url.json")
+    except importlib_metadata.PackageNotFoundError:
+        return DEFAULT_REPO_URL, "main", None
+
+    if not direct_url_raw:
+        return DEFAULT_REPO_URL, "main", None
+
+    try:
+        direct_url = json.loads(direct_url_raw)
+    except json.JSONDecodeError:
+        return DEFAULT_REPO_URL, "main", None
+
+    vcs_info = direct_url.get("vcs_info") if isinstance(direct_url.get("vcs_info"), dict) else {}
+    repo_url = str(os.getenv("SYNCREMNAWAVE_REPO") or direct_url.get("url") or DEFAULT_REPO_URL)
+    ref = str(os.getenv("SYNCREMNAWAVE_UPDATE_REF") or vcs_info.get("requested_revision") or "main")
+    commit_id = vcs_info.get("commit_id")
+    return repo_url, ref, str(commit_id) if commit_id else None
+
+
+def latest_remote_commit(repo_url: str, ref: str) -> str | None:
+    ref_candidates = [f"refs/heads/{ref}", ref]
+    for ref_candidate in ref_candidates:
+        result = subprocess.run(
+            ["git", "ls-remote", repo_url, ref_candidate],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.split()[0]
+    return None
+
+
+def install_update(repo_url: str, ref: str) -> None:
+    package_spec = f"git+{repo_url}@{ref}"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "--force-reinstall",
+            "--no-cache-dir",
+            package_spec,
+        ],
+        check=True,
+    )
+
+
+def run_self_update(language: str) -> None:
+    print(tr(language, "update_checking"))
+    repo_url, ref, current_commit = installed_git_metadata()
+    if current_commit is None:
+        print(tr(language, "update_not_installed_from_git"))
+    print(tr(language, "update_source", repo=repo_url, ref=ref))
+    print(tr(language, "update_current", commit=current_commit[:12] if current_commit else "unknown"))
+
+    latest_commit: str | None = None
+    try:
+        latest_commit = latest_remote_commit(repo_url, ref)
+    except FileNotFoundError:
+        print(tr(language, "update_git_missing"))
+
+    if latest_commit:
+        print(tr(language, "update_latest", commit=latest_commit[:12]))
+        if current_commit and latest_commit.startswith(current_commit):
+            print(tr(language, "update_already_latest"))
+            return
+
+    try:
+        print(tr(language, "update_installing"))
+        install_update(repo_url, ref)
+        print(tr(language, "update_installed"))
+    except subprocess.CalledProcessError as exc:
+        print(tr(language, "update_failed", error=exc))
+
+
 def run_interactive_menu(config_file: Path) -> tuple[str, bool]:
     config_file = config_file.expanduser()
     env_data = load_existing_env(config_file)
@@ -828,6 +936,7 @@ def run_interactive_menu(config_file: Path) -> tuple[str, bool]:
             tr(language, "menu_backup_restore"),
             tr(language, "menu_quick_settings"),
             tr(language, "menu_full_setup"),
+            tr(language, "menu_update"),
             tr(language, "menu_exit"),
         ]
         selected = prompt_menu_choice(tr(language, "menu_title"), options, language)
@@ -853,6 +962,9 @@ def run_interactive_menu(config_file: Path) -> tuple[str, bool]:
             if language not in {"ru", "en"}:
                 language = "ru"
             continue
+        if selected == 6:
+            run_self_update(language)
+            return "exit", False
         return "exit", False
 
 

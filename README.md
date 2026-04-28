@@ -68,6 +68,7 @@ When you run `remnasync` in an interactive terminal with no extra arguments, it 
 - create or restore a panel backup
 - open the full setup wizard
 - quickly toggle saved options such as node sync on or off
+- check for app updates and install them
 
 Compatibility alias:
 
@@ -150,6 +151,16 @@ S3 settings are stored in:
 The file is created with owner-only permissions where the operating system supports it.
 
 During restore you can either extract the backup into a safe restore folder or restore directly into the panel path. Direct restore first moves the existing panel directory aside to a `.pre_restore_YYYYMMDD_HHMMSS` folder. After restore, the app can immediately start panel synchronization, and it will suggest doing that automatically when the backup is older than 24 hours.
+
+### Updating The App
+
+Open the interactive menu:
+
+```bash
+remnasync
+```
+
+Choose `Update SyncRemnawave`. The app checks the Git branch it was installed from and reinstalls itself when a newer commit is available. Restart `remnasync` after updating.
 
 ### Run The Sync
 
@@ -275,6 +286,7 @@ remnasync
 - сделать или восстановить бекап панели
 - открыть полный мастер настройки
 - быстро переключить сохранённые опции, например включить или выключить синхронизацию nodes
+- проверить обновления программы и установить их
 
 Совместимый алиас тоже оставлен:
 
@@ -357,6 +369,16 @@ remnasync
 Файл создаётся с правами только для владельца, если операционная система это поддерживает.
 
 При восстановлении можно распаковать бекап в безопасную отдельную папку или восстановить прямо в путь панели. При прямом восстановлении текущая папка панели сначала переносится в `.pre_restore_YYYYMMDD_HHMMSS`. После восстановления программа может сразу запустить синхронизацию панелей, а если бекап старше 24 часов, она предложит это автоматически.
+
+### Обновление Программы
+
+Откройте интерактивное меню:
+
+```bash
+remnasync
+```
+
+Выберите `Обновить SyncRemnawave`. Программа проверит Git ветку, из которой была установлена, и переустановит себя, если появился новый commit. После обновления перезапустите `remnasync`.
 
 ### Запуск Синхронизации
 
