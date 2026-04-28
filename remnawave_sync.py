@@ -2,16 +2,21 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import io
 import json
 import locale
 import logging
 import os
 import re
+import shutil
 import shlex
 import subprocess
 import sys
+import tarfile
+import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping, TextIO
 
@@ -94,6 +99,32 @@ I18N: dict[str, dict[str, str]] = {
         "quick_toggle_delete_missing": "Toggle delete missing users",
         "quick_open_wizard": "Open full setup wizard",
         "quick_current_value": "Current value: {value}",
+        "menu_backup_restore": "Backup / restore panel",
+        "backup_menu_title": "Backup / restore",
+        "backup_create": "Create backup",
+        "backup_restore": "Restore backup",
+        "backup_list": "List backups",
+        "backup_add_s3": "Add S3 account",
+        "backup_panel_path": "Panel path",
+        "backup_local_only": "No S3 accounts configured. Backup will be saved locally only.",
+        "backup_created": "Backup created: {path}",
+        "backup_uploaded": "Uploaded to S3 account: {name}",
+        "backup_restore_done": "Restore completed to: {path}",
+        "backup_restore_overwrite": "Restore directly into the panel path",
+        "backup_restore_confirm_overwrite": "Existing panel directory will be moved aside before restore. Continue",
+        "backup_select": "Select backup number",
+        "backup_no_items": "No backups found.",
+        "backup_add_s3_title": "Add S3 account",
+        "backup_s3_name": "S3 account name",
+        "backup_s3_endpoint": "Endpoint URL (empty for AWS)",
+        "backup_s3_region": "Region",
+        "backup_s3_bucket": "Bucket",
+        "backup_s3_prefix": "Prefix",
+        "backup_s3_access_key": "Access key",
+        "backup_s3_secret_key": "Secret key",
+        "backup_s3_saved": "S3 account saved.",
+        "backup_offer_sync": "Backup is older than 24 hours. Start panel sync now",
+        "backup_sync_after_restore": "Start panel sync now",
     },
     "ru": {
         "wizard_title": "Мастер настройки SyncRemnawave",
@@ -157,6 +188,32 @@ I18N: dict[str, dict[str, str]] = {
         "quick_toggle_delete_missing": "Переключить удаление отсутствующих пользователей",
         "quick_open_wizard": "Открыть полный мастер настройки",
         "quick_current_value": "Текущее значение: {value}",
+        "menu_backup_restore": "Бекап / восстановление панели",
+        "backup_menu_title": "Бекап / восстановление",
+        "backup_create": "Сделать бекап",
+        "backup_restore": "Восстановить из бекапа",
+        "backup_list": "Показать список бекапов",
+        "backup_add_s3": "Добавить S3 аккаунт",
+        "backup_panel_path": "Путь к панели",
+        "backup_local_only": "S3 аккаунты не настроены. Бекап будет сохранен только локально.",
+        "backup_created": "Бекап создан: {path}",
+        "backup_uploaded": "Загружено в S3 аккаунт: {name}",
+        "backup_restore_done": "Восстановление завершено в: {path}",
+        "backup_restore_overwrite": "Восстановить прямо в путь панели",
+        "backup_restore_confirm_overwrite": "Существующая папка панели будет перенесена в сторону перед восстановлением. Продолжить",
+        "backup_select": "Выберите номер бекапа",
+        "backup_no_items": "Бекапы не найдены.",
+        "backup_add_s3_title": "Добавление S3 аккаунта",
+        "backup_s3_name": "Название S3 аккаунта",
+        "backup_s3_endpoint": "Endpoint URL (пусто для AWS)",
+        "backup_s3_region": "Region",
+        "backup_s3_bucket": "Bucket",
+        "backup_s3_prefix": "Prefix",
+        "backup_s3_access_key": "Access key",
+        "backup_s3_secret_key": "Secret key",
+        "backup_s3_saved": "S3 аккаунт сохранен.",
+        "backup_offer_sync": "Бекап старше 24 часов. Запустить синхронизацию панелей сейчас",
+        "backup_sync_after_restore": "Запустить синхронизацию панелей сейчас",
     },
 }
 
@@ -212,6 +269,14 @@ def default_config_file() -> Path:
 
 def default_state_file() -> Path:
     return default_config_dir() / "sync_state.json"
+
+
+def default_backup_config_file() -> Path:
+    return default_config_dir() / "backup.json"
+
+
+def default_backup_dir() -> Path:
+    return default_config_dir() / "backups"
 
 
 def tr(language: str, key: str, **kwargs: Any) -> str:
@@ -339,9 +404,9 @@ def prompt_bool(label: str, default: bool, language: str = "ru") -> bool:
         value = read_prompt_line(f"{label} [{suffix}]: ").strip().lower()
         if not value:
             return default
-        if value in {"y", "yes", "1", "true"}:
+        if value in {"y", "yes", "1", "true", "д", "да"}:
             return True
-        if value in {"n", "no", "0", "false"}:
+        if value in {"n", "no", "0", "false", "н", "нет"}:
             return False
         print(tr(language, "yes_no"))
 
@@ -476,6 +541,279 @@ def quick_toggle_settings(config_file: Path, language: str) -> None:
         print(tr(language, "quick_settings_saved", path=config_file))
 
 
+def safe_extract_tar(tar: tarfile.TarFile, destination: Path) -> None:
+    destination = destination.resolve()
+    for member in tar.getmembers():
+        member_path = (destination / member.name).resolve()
+        if os.path.commonpath([str(destination), str(member_path)]) != str(destination):
+            raise SyncError(f"Unsafe path in archive: {member.name}")
+        if member.issym() or member.islnk():
+            link_path = Path(member.linkname)
+            resolved_link = link_path.resolve() if link_path.is_absolute() else (member_path.parent / link_path).resolve()
+            if os.path.commonpath([str(destination), str(resolved_link)]) != str(destination):
+                raise SyncError(f"Unsafe link in archive: {member.name} -> {member.linkname}")
+    tar.extractall(path=destination)
+
+
+class BackupManager:
+    def __init__(self, language: str) -> None:
+        self.language = language
+        self.config_path = default_backup_config_file()
+        self.config = self._load_config()
+
+    def _load_config(self) -> dict[str, Any]:
+        if self.config_path.exists():
+            try:
+                data = json.loads(self.config_path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    return data
+            except (OSError, json.JSONDecodeError) as exc:
+                raise SyncError(f"Failed to read backup config {self.config_path}: {exc}") from exc
+        return {
+            "panel_path": "/opt/remnawave",
+            "local_backup_dir": str(default_backup_dir()),
+            "s3_accounts": [],
+        }
+
+    def _save_config(self) -> None:
+        self.config_path.parent.mkdir(parents=True, exist_ok=True)
+        self.config_path.write_text(json.dumps(self.config, ensure_ascii=True, indent=2, sort_keys=True), encoding="utf-8")
+        try:
+            os.chmod(self.config_path, 0o600)
+        except OSError:
+            pass
+
+    def _s3_client(self, account: Mapping[str, str]) -> Any:
+        try:
+            import boto3
+        except ImportError as exc:
+            raise SyncError("boto3 is required for S3 backup support. Reinstall SyncRemnawave to install dependencies.") from exc
+
+        kwargs: dict[str, str] = {
+            "aws_access_key_id": account["access_key"],
+            "aws_secret_access_key": account["secret_key"],
+            "region_name": account.get("region") or "us-east-1",
+        }
+        endpoint_url = account.get("endpoint_url")
+        if endpoint_url:
+            kwargs["endpoint_url"] = endpoint_url
+        return boto3.client("s3", **kwargs)
+
+    def configure_s3_account(self) -> None:
+        print()
+        print(tr(self.language, "backup_add_s3_title"))
+        account = {
+            "name": prompt_text(tr(self.language, "backup_s3_name"), "default", self.language),
+            "endpoint_url": prompt_text(tr(self.language, "backup_s3_endpoint"), "", self.language),
+            "region": prompt_text(tr(self.language, "backup_s3_region"), "us-east-1", self.language),
+            "bucket": prompt_text(tr(self.language, "backup_s3_bucket"), None, self.language),
+            "prefix": prompt_text(tr(self.language, "backup_s3_prefix"), "syncremnawave", self.language).strip("/"),
+            "access_key": prompt_secret(tr(self.language, "backup_s3_access_key"), language=self.language),
+            "secret_key": prompt_secret(tr(self.language, "backup_s3_secret_key"), language=self.language),
+        }
+        self.config.setdefault("s3_accounts", []).append(account)
+        self._save_config()
+        print(tr(self.language, "backup_s3_saved"))
+
+    def ask_panel_path(self) -> Path:
+        current = self.config.get("panel_path") or "/opt/remnawave"
+        panel_path = Path(prompt_text(tr(self.language, "backup_panel_path"), str(current), self.language)).expanduser()
+        self.config["panel_path"] = str(panel_path)
+        self._save_config()
+        return panel_path
+
+    def create_backup(self) -> Path:
+        panel_path = self.ask_panel_path()
+        if not panel_path.exists() or not panel_path.is_dir():
+            raise SyncError(f"Panel path does not exist or is not a directory: {panel_path}")
+
+        backup_dir = Path(self.config.get("local_backup_dir") or str(default_backup_dir())).expanduser()
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        archive_path = backup_dir / f"remnawave_panel_{timestamp}.tar.gz"
+        metadata = {
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "panel_path": str(panel_path),
+            "backup_kind": "panel_directory",
+            "tool": APP_NAME,
+        }
+
+        with tarfile.open(archive_path, "w:gz") as tar:
+            tar.add(panel_path, arcname=panel_path.name)
+            metadata_bytes = json.dumps(metadata, ensure_ascii=True, indent=2).encode("utf-8")
+            info = tarfile.TarInfo("backup_meta.json")
+            info.size = len(metadata_bytes)
+            info.mtime = int(datetime.now(timezone.utc).timestamp())
+            tar.addfile(info, fileobj=io.BytesIO(metadata_bytes))
+
+        print(tr(self.language, "backup_created", path=archive_path))
+        accounts = self.config.get("s3_accounts", [])
+        if not accounts:
+            print(tr(self.language, "backup_local_only"))
+            return archive_path
+
+        for account in accounts:
+            try:
+                key_prefix = str(account.get("prefix") or "").strip("/")
+                key = f"{key_prefix}/{archive_path.name}" if key_prefix else archive_path.name
+                client = self._s3_client(account)
+                client.upload_file(str(archive_path), account["bucket"], key)
+                print(tr(self.language, "backup_uploaded", name=account.get("name", "S3")))
+            except Exception as exc:
+                LOGGER.exception("failed uploading backup to S3 account %s: %s", account.get("name"), exc)
+        return archive_path
+
+    def list_backups(self) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        backup_dir = Path(self.config.get("local_backup_dir") or str(default_backup_dir())).expanduser()
+        if backup_dir.exists():
+            for path in sorted(backup_dir.glob("remnawave_panel_*.tar.gz"), reverse=True):
+                items.append({"source": "local", "path": path, "name": path.name, "mtime": path.stat().st_mtime})
+
+        for account_index, account in enumerate(self.config.get("s3_accounts", [])):
+            try:
+                client = self._s3_client(account)
+                prefix = str(account.get("prefix") or "").strip("/")
+                response = client.list_objects_v2(Bucket=account["bucket"], Prefix=f"{prefix}/" if prefix else "")
+                for obj in response.get("Contents", []) or []:
+                    key = obj.get("Key")
+                    if isinstance(key, str) and key.endswith(".tar.gz") and "remnawave_panel_" in key:
+                        items.append(
+                            {
+                                "source": "s3",
+                                "account_index": account_index,
+                                "account": account,
+                                "key": key,
+                                "name": key.rsplit("/", 1)[-1],
+                                "mtime": obj.get("LastModified").timestamp() if obj.get("LastModified") else 0,
+                            }
+                        )
+            except Exception as exc:
+                LOGGER.warning("failed listing S3 backups for account %s: %s", account.get("name"), exc)
+
+        items.sort(key=lambda item: float(item.get("mtime") or 0), reverse=True)
+        return items
+
+    def print_backups(self) -> list[dict[str, Any]]:
+        items = self.list_backups()
+        if not items:
+            print(tr(self.language, "backup_no_items"))
+            return []
+        print()
+        for index, item in enumerate(items, start=1):
+            source = item["source"]
+            location = str(item.get("path") or item.get("key"))
+            print(f"{index}. [{source}] {item['name']} - {location}")
+        return items
+
+    def _download_if_needed(self, item: Mapping[str, Any]) -> Path:
+        if item["source"] == "local":
+            return Path(item["path"])
+        account = item["account"]
+        temp_path = Path(tempfile.gettempdir()) / str(item["name"])
+        client = self._s3_client(account)
+        client.download_file(account["bucket"], item["key"], str(temp_path))
+        return temp_path
+
+    def _backup_age_hours(self, archive_path: Path) -> float | None:
+        try:
+            with tarfile.open(archive_path, "r:gz") as tar:
+                member = tar.getmember("backup_meta.json")
+                extracted = tar.extractfile(member)
+                if not extracted:
+                    return None
+                metadata = json.loads(extracted.read().decode("utf-8"))
+            created_at = datetime.fromisoformat(str(metadata["created_at"]))
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            return (datetime.now(timezone.utc) - created_at).total_seconds() / 3600
+        except Exception:
+            return None
+
+    def _archive_root_name(self, archive_path: Path) -> str | None:
+        try:
+            with tarfile.open(archive_path, "r:gz") as tar:
+                root_names = {
+                    member.name.split("/", 1)[0]
+                    for member in tar.getmembers()
+                    if member.name and member.name != "backup_meta.json"
+                }
+            return next(iter(root_names)) if len(root_names) == 1 else None
+        except Exception:
+            return None
+
+    def restore_backup(self) -> bool:
+        items = self.print_backups()
+        if not items:
+            return False
+        selected = prompt_int(tr(self.language, "backup_select"), 1, self.language)
+        if selected < 1 or selected > len(items):
+            print(tr(self.language, "menu_invalid"))
+            return False
+
+        archive_path = self._download_if_needed(items[selected - 1])
+        panel_path = self.ask_panel_path()
+        overwrite = prompt_bool(tr(self.language, "backup_restore_overwrite"), False, self.language)
+        if overwrite:
+            if not prompt_bool(tr(self.language, "backup_restore_confirm_overwrite"), False, self.language):
+                return False
+            destination = panel_path.parent
+            if panel_path.exists():
+                backup_existing = panel_path.with_name(f"{panel_path.name}.pre_restore_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}")
+                shutil.move(str(panel_path), str(backup_existing))
+        else:
+            destination = default_config_dir() / "restores" / datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            destination.mkdir(parents=True, exist_ok=True)
+
+        with tarfile.open(archive_path, "r:gz") as tar:
+            safe_extract_tar(tar, destination)
+        if overwrite:
+            archive_root_name = self._archive_root_name(archive_path)
+            extracted_root = destination / archive_root_name if archive_root_name else None
+            if extracted_root and extracted_root.exists() and extracted_root != panel_path:
+                if panel_path.exists():
+                    raise SyncError(f"Restore target already exists after extraction: {panel_path}")
+                shutil.move(str(extracted_root), str(panel_path))
+        restore_path = panel_path if overwrite else destination
+        print(tr(self.language, "backup_restore_done", path=restore_path))
+
+        age_hours = self._backup_age_hours(archive_path)
+        if age_hours is not None and age_hours > 24:
+            return prompt_bool(tr(self.language, "backup_offer_sync"), True, self.language)
+        return prompt_bool(tr(self.language, "backup_sync_after_restore"), False, self.language)
+
+
+def run_backup_restore_menu(language: str) -> bool:
+    manager = BackupManager(language)
+    while True:
+        selected = prompt_menu_choice(
+            tr(language, "backup_menu_title"),
+            [
+                tr(language, "backup_create"),
+                tr(language, "backup_restore"),
+                tr(language, "backup_list"),
+                tr(language, "backup_add_s3"),
+                tr(language, "menu_back"),
+            ],
+            language,
+        )
+        try:
+            if selected == 1:
+                manager.create_backup()
+            elif selected == 2:
+                if manager.restore_backup():
+                    return True
+            elif selected == 3:
+                manager.print_backups()
+            elif selected == 4:
+                manager.configure_s3_account()
+            else:
+                return False
+        except Exception as exc:
+            LOGGER.exception("backup/restore action failed: %s", exc)
+            print(f"ERROR: {exc}")
+
+
 def run_interactive_menu(config_file: Path) -> tuple[str, bool]:
     config_file = config_file.expanduser()
     env_data = load_existing_env(config_file)
@@ -487,6 +825,7 @@ def run_interactive_menu(config_file: Path) -> tuple[str, bool]:
         options = [
             tr(language, "menu_sync_now"),
             tr(language, "menu_dry_run"),
+            tr(language, "menu_backup_restore"),
             tr(language, "menu_quick_settings"),
             tr(language, "menu_full_setup"),
             tr(language, "menu_exit"),
@@ -497,13 +836,17 @@ def run_interactive_menu(config_file: Path) -> tuple[str, bool]:
         if selected == 2:
             return "sync", True
         if selected == 3:
+            if run_backup_restore_menu(language):
+                return "sync", False
+            continue
+        if selected == 4:
             quick_toggle_settings(config_file, language)
             env_data = load_existing_env(config_file)
             language = env_data.get("LANGUAGE", language).strip().lower() if env_data.get("LANGUAGE") else language
             if language not in {"ru", "en"}:
                 language = "ru"
             continue
-        if selected == 4:
+        if selected == 5:
             run_setup_wizard(config_file)
             env_data = load_existing_env(config_file)
             language = env_data.get("LANGUAGE", language).strip().lower() if env_data.get("LANGUAGE") else language

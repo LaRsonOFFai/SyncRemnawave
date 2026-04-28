@@ -65,6 +65,7 @@ When you run `remnasync` in an interactive terminal with no extra arguments, it 
 
 - start synchronization
 - run `dry-run`
+- create or restore a panel backup
 - open the full setup wizard
 - quickly toggle saved options such as node sync on or off
 
@@ -108,6 +109,47 @@ The wizard does not start synchronization silently:
 1. it shows a summary of your settings
 2. it asks whether to save them
 3. if the wizard was started automatically because config is missing, it asks whether to start sync now
+
+### Backup And Restore
+
+Open the interactive menu:
+
+```bash
+remnasync
+```
+
+Choose `Backup / restore panel`.
+
+The backup tool will ask for the Remnawave panel directory. The default path is:
+
+```text
+/opt/remnawave
+```
+
+You can keep the default or enter a custom path. Backups are saved locally by default:
+
+```text
+~/.config/SyncRemnawave/backups
+```
+
+You can also add one or more S3-compatible accounts from the same menu. For S3 you need:
+
+- endpoint URL, or empty value for AWS
+- region
+- bucket
+- prefix
+- access key
+- secret key
+
+S3 settings are stored in:
+
+```text
+~/.config/SyncRemnawave/backup.json
+```
+
+The file is created with owner-only permissions where the operating system supports it.
+
+During restore you can either extract the backup into a safe restore folder or restore directly into the panel path. Direct restore first moves the existing panel directory aside to a `.pre_restore_YYYYMMDD_HHMMSS` folder. After restore, the app can immediately start panel synchronization, and it will suggest doing that automatically when the backup is older than 24 hours.
 
 ### Run The Sync
 
@@ -161,6 +203,7 @@ remnasync --dry-run
 - User and node metadata are synced through official metadata endpoints when available
 - Infra billing sync uses the official `infra-billing/providers` and `infra-billing/nodes` API routes
 - Infra billing history records are not mirrored automatically
+- The built-in backup tool archives the panel directory. If your database lives outside that directory, make sure your deployment stores the required data under the selected path or add a separate database dump to your operational backup plan.
 
 ---
 
@@ -229,6 +272,7 @@ remnasync
 
 - запустить синхронизацию
 - запустить `dry-run`
+- сделать или восстановить бекап панели
 - открыть полный мастер настройки
 - быстро переключить сохранённые опции, например включить или выключить синхронизацию nodes
 
@@ -272,6 +316,47 @@ remnasync init
 1. сначала показывает итоговую сводку настроек
 2. потом спрашивает, сохранять ли их
 3. если мастер открылся автоматически из-за отсутствия конфига, отдельно спрашивает, запускать ли синхронизацию прямо сейчас
+
+### Бекап И Восстановление
+
+Откройте интерактивное меню:
+
+```bash
+remnasync
+```
+
+Выберите `Бекап / восстановление панели`.
+
+Бекапер спросит путь к папке панели Remnawave. Стандартный путь:
+
+```text
+/opt/remnawave
+```
+
+Можно оставить стандартный путь или указать свой. По умолчанию бекапы сохраняются локально:
+
+```text
+~/.config/SyncRemnawave/backups
+```
+
+В этом же меню можно добавить один или несколько S3-compatible аккаунтов. Для S3 нужны:
+
+- endpoint URL, либо пустое значение для AWS
+- region
+- bucket
+- prefix
+- access key
+- secret key
+
+Настройки S3 хранятся здесь:
+
+```text
+~/.config/SyncRemnawave/backup.json
+```
+
+Файл создаётся с правами только для владельца, если операционная система это поддерживает.
+
+При восстановлении можно распаковать бекап в безопасную отдельную папку или восстановить прямо в путь панели. При прямом восстановлении текущая папка панели сначала переносится в `.pre_restore_YYYYMMDD_HHMMSS`. После восстановления программа может сразу запустить синхронизацию панелей, а если бекап старше 24 часов, она предложит это автоматически.
 
 ### Запуск Синхронизации
 
@@ -325,3 +410,4 @@ remnasync --dry-run
 - Для `users` и `nodes` metadata синхронизируется через официальные endpoints, если они доступны
 - Infra billing синхронизируется через официальные routes `infra-billing/providers` и `infra-billing/nodes`
 - История infra billing платежей автоматически не зеркалируется
+- Встроенный бекапер архивирует папку панели. Если база данных находится вне этой папки, убедитесь, что нужные данные действительно лежат в выбранном пути, или добавьте отдельный dump базы в свой production-план бекапов.
