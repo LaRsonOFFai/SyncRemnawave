@@ -142,15 +142,21 @@ You can also add one or more S3-compatible accounts from the same menu. For S3 y
 - access key
 - secret key
 
+The same backup menu can configure Telegram notifications. You need:
+
+- `BOT_TOKEN` from `@BotFather`
+- `CHAT_ID` for a user, group, or channel
+- optional `TOPIC_ID` for Telegram forum groups
+
 S3 settings are stored in:
 
 ```text
 ~/.config/SyncRemnawave/backup.json
 ```
 
-The file is created with owner-only permissions where the operating system supports it.
+S3 and Telegram settings are stored in the same file. It is created with owner-only permissions where the operating system supports it.
 
-During restore you can either extract the backup into a safe restore folder or restore directly into the panel path. Direct restore first moves the existing panel directory aside to a `.pre_restore_YYYYMMDD_HHMMSS` folder. After restore, the app can immediately start panel synchronization, and it will suggest doing that automatically when the backup is older than 24 hours.
+During restore you can either extract the backup into a safe restore folder or restore directly into the panel path. Direct restore first moves the existing panel directory aside to a `.pre_restore_YYYYMMDD_HHMMSS` folder. After backup or restore, Telegram notifications are sent when configured. After restore, the app can immediately start panel synchronization, and it will suggest doing that automatically when the backup is older than 24 hours.
 
 ### Updating The App
 
@@ -161,6 +167,7 @@ remnasync
 ```
 
 Choose `Update SyncRemnawave`. The app checks the Git branch it was installed from and reinstalls itself when a newer commit is available. Restart `remnasync` after updating.
+If the installed version is already current, the app prints that the latest version is installed and stays in the menu.
 
 ### Run The Sync
 
@@ -360,15 +367,21 @@ remnasync
 - access key
 - secret key
 
+В этом же меню можно настроить Telegram уведомления. Для этого нужны:
+
+- `BOT_TOKEN` от `@BotFather`
+- `CHAT_ID` пользователя, группы или канала
+- опциональный `TOPIC_ID` для Telegram forum-групп
+
 Настройки S3 хранятся здесь:
 
 ```text
 ~/.config/SyncRemnawave/backup.json
 ```
 
-Файл создаётся с правами только для владельца, если операционная система это поддерживает.
+Настройки S3 и Telegram хранятся в одном файле. Файл создаётся с правами только для владельца, если операционная система это поддерживает.
 
-При восстановлении можно распаковать бекап в безопасную отдельную папку или восстановить прямо в путь панели. При прямом восстановлении текущая папка панели сначала переносится в `.pre_restore_YYYYMMDD_HHMMSS`. После восстановления программа может сразу запустить синхронизацию панелей, а если бекап старше 24 часов, она предложит это автоматически.
+При восстановлении можно распаковать бекап в безопасную отдельную папку или восстановить прямо в путь панели. При прямом восстановлении текущая папка панели сначала переносится в `.pre_restore_YYYYMMDD_HHMMSS`. Если Telegram настроен, после backup или restore программа отправит уведомление. После восстановления программа может сразу запустить синхронизацию панелей, а если бекап старше 24 часов, она предложит это автоматически.
 
 ### Обновление Программы
 
@@ -379,6 +392,7 @@ remnasync
 ```
 
 Выберите `Обновить SyncRemnawave`. Программа проверит Git ветку, из которой была установлена, и переустановит себя, если появился новый commit. После обновления перезапустите `remnasync`.
+Если установлена актуальная версия, программа напишет, что версия последняя, и останется в меню.
 
 ### Запуск Синхронизации
 

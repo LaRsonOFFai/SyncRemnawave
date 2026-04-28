@@ -109,6 +109,7 @@ I18N: dict[str, dict[str, str]] = {
         "backup_restore": "Restore backup",
         "backup_list": "List backups",
         "backup_add_s3": "Add S3 account",
+        "backup_setup_telegram": "Configure Telegram notifications",
         "backup_panel_path": "Panel path",
         "backup_local_only": "No S3 accounts configured. Backup will be saved locally only.",
         "backup_created": "Backup created: {path}",
@@ -129,12 +130,22 @@ I18N: dict[str, dict[str, str]] = {
         "backup_s3_saved": "S3 account saved.",
         "backup_offer_sync": "Backup is older than 24 hours. Start panel sync now",
         "backup_sync_after_restore": "Start panel sync now",
+        "telegram_title": "Telegram notification setup",
+        "telegram_token": "BOT_TOKEN from @BotFather",
+        "telegram_chat_id": "CHAT_ID or group ID",
+        "telegram_topic_id": "TOPIC_ID for forum groups (empty if not needed)",
+        "telegram_test_sending": "Sending test Telegram message...",
+        "telegram_test_message": "SyncRemnawave Telegram notifications are configured.",
+        "telegram_saved": "Telegram notifications saved.",
+        "telegram_save_anyway": "Telegram test failed. Save settings anyway",
+        "telegram_error": "Telegram error: {error}",
+        "telegram_not_configured": "Telegram notifications are not configured.",
         "update_checking": "Checking for updates...",
         "update_source": "Update source: {repo}@{ref}",
         "update_current": "Installed commit: {commit}",
         "update_latest": "Latest commit: {commit}",
         "update_not_installed_from_git": "Installed Git metadata was not found. The updater will reinstall from the default repository.",
-        "update_already_latest": "SyncRemnawave is already up to date.",
+        "update_already_latest": "SyncRemnawave is already on the latest version.",
         "update_installing": "Installing update...",
         "update_installed": "Update installed. Please restart remnasync to use the new version.",
         "update_failed": "Update failed: {error}",
@@ -209,6 +220,7 @@ I18N: dict[str, dict[str, str]] = {
         "backup_restore": "Восстановить из бекапа",
         "backup_list": "Показать список бекапов",
         "backup_add_s3": "Добавить S3 аккаунт",
+        "backup_setup_telegram": "Настроить Telegram уведомления",
         "backup_panel_path": "Путь к панели",
         "backup_local_only": "S3 аккаунты не настроены. Бекап будет сохранен только локально.",
         "backup_created": "Бекап создан: {path}",
@@ -229,12 +241,22 @@ I18N: dict[str, dict[str, str]] = {
         "backup_s3_saved": "S3 аккаунт сохранен.",
         "backup_offer_sync": "Бекап старше 24 часов. Запустить синхронизацию панелей сейчас",
         "backup_sync_after_restore": "Запустить синхронизацию панелей сейчас",
+        "telegram_title": "Настройка Telegram уведомлений",
+        "telegram_token": "BOT_TOKEN от @BotFather",
+        "telegram_chat_id": "CHAT_ID или ID группы",
+        "telegram_topic_id": "TOPIC_ID для форум-группы (пусто, если не нужно)",
+        "telegram_test_sending": "Отправляю тестовое сообщение в Telegram...",
+        "telegram_test_message": "Telegram уведомления SyncRemnawave настроены.",
+        "telegram_saved": "Telegram уведомления сохранены.",
+        "telegram_save_anyway": "Тест Telegram не прошел. Все равно сохранить настройки",
+        "telegram_error": "Ошибка Telegram: {error}",
+        "telegram_not_configured": "Telegram уведомления не настроены.",
         "update_checking": "Проверяю обновления...",
         "update_source": "Источник обновления: {repo}@{ref}",
         "update_current": "Установленный commit: {commit}",
         "update_latest": "Последний commit: {commit}",
         "update_not_installed_from_git": "Git metadata установленного пакета не найден. Обновлятор переустановит программу из стандартного репозитория.",
-        "update_already_latest": "SyncRemnawave уже обновлен до последней версии.",
+        "update_already_latest": "Установлена последняя версия SyncRemnawave.",
         "update_installing": "Устанавливаю обновление...",
         "update_installed": "Обновление установлено. Перезапустите remnasync, чтобы использовать новую версию.",
         "update_failed": "Не удалось обновиться: {error}",
@@ -598,6 +620,7 @@ class BackupManager:
             "panel_path": "/opt/remnawave",
             "local_backup_dir": str(default_backup_dir()),
             "s3_accounts": [],
+            "telegram": {"bot_token": "", "chat_id": "", "topic_id": ""},
         }
 
     def _save_config(self) -> None:
@@ -624,6 +647,41 @@ class BackupManager:
             kwargs["endpoint_url"] = endpoint_url
         return boto3.client("s3", **kwargs)
 
+    def _telegram_payload(self, text: str, success: bool = True) -> dict[str, Any] | None:
+        telegram = self.config.get("telegram", {})
+        if not isinstance(telegram, dict):
+            return None
+        bot_token = str(telegram.get("bot_token") or "").strip()
+        chat_id = str(telegram.get("chat_id") or "").strip()
+        topic_id = str(telegram.get("topic_id") or "").strip()
+        if not bot_token or not chat_id:
+            return None
+        status = "SUCCESS" if success else "FAILED"
+        payload: dict[str, Any] = {
+            "chat_id": chat_id,
+            "text": f"SyncRemnawave {status}\n\n{text}",
+        }
+        if topic_id:
+            try:
+                payload["message_thread_id"] = int(topic_id)
+            except ValueError:
+                raise SyncError("Invalid Telegram TOPIC_ID")
+        return {"bot_token": bot_token, "payload": payload}
+
+    def send_telegram_message(self, text: str, success: bool = True) -> None:
+        try:
+            telegram_payload = self._telegram_payload(text, success)
+            if not telegram_payload:
+                return
+            response = httpx.post(
+                f"https://api.telegram.org/bot{telegram_payload['bot_token']}/sendMessage",
+                json=telegram_payload["payload"],
+                timeout=10,
+            )
+            response.raise_for_status()
+        except Exception as exc:
+            print(tr(self.language, "telegram_error", error=exc))
+
     def configure_s3_account(self) -> None:
         print()
         print(tr(self.language, "backup_add_s3_title"))
@@ -639,6 +697,54 @@ class BackupManager:
         self.config.setdefault("s3_accounts", []).append(account)
         self._save_config()
         print(tr(self.language, "backup_s3_saved"))
+
+    def configure_telegram(self) -> None:
+        print()
+        print(tr(self.language, "telegram_title"))
+        existing = self.config.get("telegram", {})
+        existing = existing if isinstance(existing, dict) else {}
+        bot_token = prompt_secret(
+            tr(self.language, "telegram_token"),
+            has_default=bool(existing.get("bot_token")),
+            language=self.language,
+        ) or str(existing.get("bot_token") or "")
+        chat_id = prompt_text(tr(self.language, "telegram_chat_id"), str(existing.get("chat_id") or "") or None, self.language)
+        topic_id = prompt_text(tr(self.language, "telegram_topic_id"), str(existing.get("topic_id") or ""), self.language)
+
+        telegram_config = {
+            "bot_token": bot_token,
+            "chat_id": chat_id,
+            "topic_id": topic_id,
+        }
+        old_telegram = self.config.get("telegram")
+        self.config["telegram"] = telegram_config
+
+        print(tr(self.language, "telegram_test_sending"))
+        test_ok = True
+        try:
+            telegram_payload = self._telegram_payload(tr(self.language, "telegram_test_message"), success=True)
+            if telegram_payload:
+                response = httpx.post(
+                    f"https://api.telegram.org/bot{telegram_payload['bot_token']}/sendMessage",
+                    json=telegram_payload["payload"],
+                    timeout=10,
+                )
+                response.raise_for_status()
+            else:
+                test_ok = False
+                print(tr(self.language, "telegram_not_configured"))
+        except Exception as exc:
+            test_ok = False
+            print(tr(self.language, "telegram_error", error=exc))
+
+        if test_ok or prompt_bool(tr(self.language, "telegram_save_anyway"), False, self.language):
+            self._save_config()
+            print(tr(self.language, "telegram_saved"))
+        else:
+            if old_telegram is None:
+                self.config.pop("telegram", None)
+            else:
+                self.config["telegram"] = old_telegram
 
     def ask_panel_path(self) -> Path:
         current = self.config.get("panel_path") or "/opt/remnawave"
@@ -675,17 +781,36 @@ class BackupManager:
         accounts = self.config.get("s3_accounts", [])
         if not accounts:
             print(tr(self.language, "backup_local_only"))
+            self.send_telegram_message(f"BACKUP SUCCESS\nPath: {panel_path}\nFile: {archive_path.name}\nStorage: local only", success=True)
             return archive_path
 
+        upload_errors: list[str] = []
+        upload_successes = 0
         for account in accounts:
             try:
                 key_prefix = str(account.get("prefix") or "").strip("/")
                 key = f"{key_prefix}/{archive_path.name}" if key_prefix else archive_path.name
                 client = self._s3_client(account)
                 client.upload_file(str(archive_path), account["bucket"], key)
+                upload_successes += 1
                 print(tr(self.language, "backup_uploaded", name=account.get("name", "S3")))
             except Exception as exc:
                 LOGGER.exception("failed uploading backup to S3 account %s: %s", account.get("name"), exc)
+                upload_errors.append(f"{account.get('name', 'S3')}: {exc}")
+        if upload_errors:
+            self.send_telegram_message(
+                "BACKUP PARTIAL FAIL\n"
+                f"Path: {panel_path}\n"
+                f"File: {archive_path.name}\n"
+                f"Uploaded: {upload_successes}/{len(accounts)}\n"
+                f"Errors: {'; '.join(upload_errors)}",
+                success=False,
+            )
+        else:
+            self.send_telegram_message(
+                f"BACKUP SUCCESS\nPath: {panel_path}\nFile: {archive_path.name}\nS3 accounts: {len(accounts)}",
+                success=True,
+            )
         return archive_path
 
     def list_backups(self) -> list[dict[str, Any]]:
@@ -801,6 +926,7 @@ class BackupManager:
                 shutil.move(str(extracted_root), str(panel_path))
         restore_path = panel_path if overwrite else destination
         print(tr(self.language, "backup_restore_done", path=restore_path))
+        self.send_telegram_message(f"RESTORE SUCCESS\nFile: {archive_path.name}\nPath: {restore_path}", success=True)
 
         age_hours = self._backup_age_hours(archive_path)
         if age_hours is not None and age_hours > 24:
@@ -818,6 +944,7 @@ def run_backup_restore_menu(language: str) -> bool:
                 tr(language, "backup_restore"),
                 tr(language, "backup_list"),
                 tr(language, "backup_add_s3"),
+                tr(language, "backup_setup_telegram"),
                 tr(language, "menu_back"),
             ],
             language,
@@ -832,10 +959,14 @@ def run_backup_restore_menu(language: str) -> bool:
                 manager.print_backups()
             elif selected == 4:
                 manager.configure_s3_account()
+            elif selected == 5:
+                manager.configure_telegram()
             else:
                 return False
         except Exception as exc:
             LOGGER.exception("backup/restore action failed: %s", exc)
+            if selected in {1, 2}:
+                manager.send_telegram_message(f"BACKUP/RESTORE FAILED\nError: {exc}", success=False)
             print(f"ERROR: {exc}")
 
 
@@ -894,7 +1025,7 @@ def install_update(repo_url: str, ref: str) -> None:
     )
 
 
-def run_self_update(language: str) -> None:
+def run_self_update(language: str) -> bool:
     print(tr(language, "update_checking"))
     repo_url, ref, current_commit = installed_git_metadata()
     if current_commit is None:
@@ -912,14 +1043,16 @@ def run_self_update(language: str) -> None:
         print(tr(language, "update_latest", commit=latest_commit[:12]))
         if current_commit and latest_commit.startswith(current_commit):
             print(tr(language, "update_already_latest"))
-            return
+            return False
 
     try:
         print(tr(language, "update_installing"))
         install_update(repo_url, ref)
         print(tr(language, "update_installed"))
+        return True
     except subprocess.CalledProcessError as exc:
         print(tr(language, "update_failed", error=exc))
+        return False
 
 
 def run_interactive_menu(config_file: Path) -> tuple[str, bool]:
@@ -963,8 +1096,9 @@ def run_interactive_menu(config_file: Path) -> tuple[str, bool]:
                 language = "ru"
             continue
         if selected == 6:
-            run_self_update(language)
-            return "exit", False
+            if run_self_update(language):
+                return "exit", False
+            continue
         return "exit", False
 
 
