@@ -836,12 +836,11 @@ class BackupManager:
         existing = self.config.get("telegram", {})
         existing = existing if isinstance(existing, dict) else {}
         bot_token = validate_telegram_bot_token(
-            prompt_secret_cancelable(
+            prompt_text_cancelable(
                 tr(self.language, "telegram_token"),
-                has_default=bool(existing.get("bot_token")),
+                str(existing.get("bot_token") or "") or None,
                 language=self.language,
-            )
-            or str(existing.get("bot_token") or ""),
+            ),
             self.language,
         )
         chat_id = prompt_text_cancelable(tr(self.language, "telegram_chat_id"), str(existing.get("chat_id") or "") or None, self.language)
