@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import glob
 import getpass
 import io
 from importlib import metadata as importlib_metadata
@@ -133,6 +134,8 @@ I18N: dict[str, dict[str, str]] = {
         "backup_paths_none": "No backup paths configured.",
         "backup_add_path": "Add backup path",
         "backup_delete_path": "Delete backup path",
+        "backup_path_input_hint": "Use Tab to autocomplete paths. Arrow keys can move inside the input line.",
+        "backup_path_missing": "Backup path does not exist: {path}",
         "backup_path_saved": "Backup path saved: {path}",
         "backup_path_deleted": "Backup path deleted: {path}",
         "backup_path_select": "Backup path number",
@@ -297,6 +300,8 @@ I18N: dict[str, dict[str, str]] = {
         "backup_paths_none": "Пути архивации не настроены.",
         "backup_add_path": "Добавить путь архивации",
         "backup_delete_path": "Удалить путь архивации",
+        "backup_path_input_hint": "Используйте Tab для автодополнения пути. Стрелками можно перемещаться внутри строки.",
+        "backup_path_missing": "Путь архивации не существует: {path}",
         "backup_path_saved": "Путь архивации сохранен: {path}",
         "backup_path_deleted": "Путь архивации удален: {path}",
         "backup_path_select": "Номер пути архивации",
@@ -547,6 +552,61 @@ def read_prompt_line(prompt: str) -> str:
     return line.rstrip("\r\n")
 
 
+@contextmanager
+def path_completion_enabled() -> Iterator[None]:
+    try:
+        import readline
+    except ImportError:
+        yield
+        return
+
+    old_completer = readline.get_completer()
+    old_delims = readline.get_completer_delims()
+
+    def complete_path(text: str, state: int) -> str | None:
+        expanded_text = os.path.expanduser(text)
+        pattern = f"{expanded_text}*"
+        matches: list[str] = []
+        for match in sorted(glob.glob(pattern)):
+            completed = f"{match}{os.sep}" if os.path.isdir(match) else match
+            if text.startswith("~"):
+                home = str(Path.home())
+                if completed.startswith(home):
+                    completed = f"~{completed[len(home):]}"
+            matches.append(completed)
+        try:
+            return matches[state]
+        except IndexError:
+            return None
+
+    try:
+        readline.set_completer(complete_path)
+        readline.set_completer_delims(" \t\n")
+        readline.parse_and_bind("tab: complete")
+        yield
+    finally:
+        readline.set_completer(old_completer)
+        readline.set_completer_delims(old_delims)
+
+
+def read_prompt_line_with_readline(prompt: str) -> str:
+    with open_console_streams() as (console_in, console_out):
+        old_stdin = sys.stdin
+        old_stdout = sys.stdout
+        try:
+            sys.stdin = console_in
+            sys.stdout = console_out
+            line = input(prompt)
+        except KeyboardInterrupt:
+            register_ctrl_c()
+        except EOFError as exc:
+            raise SyncError("Interactive setup was cancelled because no terminal input is available.") from exc
+        finally:
+            sys.stdin = old_stdin
+            sys.stdout = old_stdout
+    return line.rstrip("\r\n")
+
+
 def prompt_text(label: str, default: str | None = None, language: str = "ru") -> str:
     suffix = f" [{default}]" if default else ""
     while True:
@@ -622,6 +682,22 @@ def prompt_text_cancelable(label: str, default: str | None = None, language: str
     suffix = f" [{default}]" if default else ""
     while True:
         value = read_prompt_line(f"{label}{suffix}: ").strip()
+        if is_cancel_input(value):
+            raise UserCancelled(tr(language, "action_cancelled"))
+        if value:
+            return value
+        if default is not None:
+            return default
+        print(tr(language, "value_required"))
+
+
+def prompt_path_cancelable(label: str, default: str | None = None, language: str = "ru") -> str:
+    print(tr(language, "input_cancel_hint"))
+    print(tr(language, "backup_path_input_hint"))
+    suffix = f" [{default}]" if default else ""
+    while True:
+        with path_completion_enabled():
+            value = read_prompt_line_with_readline(f"{label}{suffix}: ").strip()
         if is_cancel_input(value):
             raise UserCancelled(tr(language, "action_cancelled"))
         if value:
@@ -1236,10 +1312,12 @@ class BackupManager:
                 self._save_config()
                 return
             if selected == 1:
-                raw_path = prompt_text_cancelable(tr(self.language, "backup_panel_path"), "/opt/remnawave", self.language)
+                raw_path = prompt_path_cancelable(tr(self.language, "backup_panel_path"), "/opt/remnawave", self.language)
                 path = str(Path(raw_path).expanduser())
                 if not Path(path).exists():
-                    raise SyncError(f"Backup path does not exist: {path}")
+                    print(tr(self.language, "backup_path_missing", path=path))
+                    pause_for_user(self.language)
+                    continue
                 if path not in paths:
                     paths.append(path)
                     self.config["backup_paths"] = paths
@@ -1349,7 +1427,7 @@ class BackupManager:
 
     def ask_panel_path(self) -> Path:
         current = self.config.get("panel_path") or "/opt/remnawave"
-        panel_path = Path(prompt_text_cancelable(tr(self.language, "backup_panel_path"), str(current), self.language)).expanduser()
+        panel_path = Path(prompt_path_cancelable(tr(self.language, "backup_panel_path"), str(current), self.language)).expanduser()
         self.config["panel_path"] = str(panel_path)
         self._save_config()
         return panel_path
