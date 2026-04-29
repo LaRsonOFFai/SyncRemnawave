@@ -129,7 +129,7 @@ The backup tool can archive one path or all configured paths. The default path i
 /opt/remnawave
 ```
 
-You can keep the default, enter a custom path, or use `Configure backup paths` to maintain a list of paths. When entering a path in an interactive terminal, use `Tab` for path autocompletion and arrow keys to move inside the input line. Backups are saved locally by default:
+You can keep the default, enter a custom path, or use `Configure backup paths` to maintain a list of paths. When entering a path in an interactive terminal, `Tab` completes paths like in a Linux shell; if there are several matches, pressing `Tab` again shows similar paths. Backups are saved locally by default:
 
 ```text
 ~/.config/SyncRemnawave/backups
@@ -377,7 +377,7 @@ remnasync
 /opt/remnawave
 ```
 
-Можно оставить стандартный путь, указать свой или через пункт `Настроить пути архивации` вести список нескольких путей. При вводе пути в интерактивном терминале можно использовать `Tab` для автодополнения пути и стрелки для перемещения внутри строки. По умолчанию бекапы сохраняются локально:
+Можно оставить стандартный путь, указать свой или через пункт `Настроить пути архивации` вести список нескольких путей. При вводе пути в интерактивном терминале `Tab` дозаполняет путь как в Linux shell; если вариантов несколько, повторный `Tab` показывает похожие пути. По умолчанию бекапы сохраняются локально:
 
 ```text
 ~/.config/SyncRemnawave/backups

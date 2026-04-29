@@ -134,7 +134,7 @@ I18N: dict[str, dict[str, str]] = {
         "backup_paths_none": "No backup paths configured.",
         "backup_add_path": "Add backup path",
         "backup_delete_path": "Delete backup path",
-        "backup_path_input_hint": "Use Tab to autocomplete paths. Arrow keys can move inside the input line.",
+        "backup_path_input_hint": "Use Tab to complete paths like in a Linux shell. Press Tab again to show similar paths.",
         "backup_path_missing": "Backup path does not exist: {path}",
         "backup_path_saved": "Backup path saved: {path}",
         "backup_path_deleted": "Backup path deleted: {path}",
@@ -300,7 +300,7 @@ I18N: dict[str, dict[str, str]] = {
         "backup_paths_none": "Пути архивации не настроены.",
         "backup_add_path": "Добавить путь архивации",
         "backup_delete_path": "Удалить путь архивации",
-        "backup_path_input_hint": "Используйте Tab для автодополнения пути. Стрелками можно перемещаться внутри строки.",
+        "backup_path_input_hint": "Используйте Tab для дозаполнения пути как в Linux shell. Повторный Tab покажет похожие пути.",
         "backup_path_missing": "Путь архивации не существует: {path}",
         "backup_path_saved": "Путь архивации сохранен: {path}",
         "backup_path_deleted": "Путь архивации удален: {path}",
@@ -607,6 +607,106 @@ def read_prompt_line_with_readline(prompt: str) -> str:
     return line.rstrip("\r\n")
 
 
+def path_completion_matches(prefix: str) -> list[str]:
+    expanded_prefix = os.path.expanduser(prefix)
+    matches: list[str] = []
+    for match in sorted(glob.glob(f"{expanded_prefix}*")):
+        completed = f"{match}{os.sep}" if os.path.isdir(match) else match
+        if prefix.startswith("~"):
+            home = str(Path.home())
+            if completed.startswith(home):
+                completed = f"~{completed[len(home):]}"
+        matches.append(completed)
+    return matches
+
+
+def read_path_line(prompt: str) -> str:
+    try:
+        import termios
+        import tty
+    except ImportError:
+        with path_completion_enabled():
+            return read_prompt_line_with_readline(prompt)
+
+    with open_console_streams() as (console_in, console_out):
+        if not console_in.isatty() or not console_out.isatty():
+            with path_completion_enabled():
+                return read_prompt_line_with_readline(prompt)
+
+        fd = console_in.fileno()
+        old_settings = termios.tcgetattr(fd)
+        buffer: list[str] = []
+        cursor = 0
+
+        def redraw() -> None:
+            console_out.write("\r\033[K")
+            console_out.write(prompt)
+            console_out.write("".join(buffer))
+            if cursor < len(buffer):
+                console_out.write(f"\033[{len(buffer) - cursor}D")
+            console_out.flush()
+
+        def replace_prefix(next_prefix: str) -> None:
+            nonlocal buffer, cursor
+            suffix = buffer[cursor:]
+            buffer = list(next_prefix) + suffix
+            cursor = len(next_prefix)
+
+        try:
+            tty.setraw(fd)
+            redraw()
+            while True:
+                char = console_in.read(1)
+                if char in {"\r", "\n"}:
+                    console_out.write("\r\n")
+                    console_out.flush()
+                    return "".join(buffer)
+                if char == "\x03":
+                    register_ctrl_c()
+                if char in {"\x7f", "\b"}:
+                    if cursor > 0:
+                        del buffer[cursor - 1]
+                        cursor -= 1
+                        redraw()
+                    continue
+                if char == "\t":
+                    prefix = "".join(buffer[:cursor])
+                    matches = path_completion_matches(prefix)
+                    if not matches:
+                        console_out.write("\a")
+                        console_out.flush()
+                        continue
+                    common_prefix = os.path.commonprefix(matches)
+                    if common_prefix and common_prefix != prefix:
+                        replace_prefix(common_prefix)
+                        redraw()
+                        continue
+                    if len(matches) == 1 and matches[0] != prefix:
+                        replace_prefix(matches[0])
+                        redraw()
+                        continue
+                    console_out.write("\r\n")
+                    for match in matches:
+                        console_out.write(f"{match}\r\n")
+                    redraw()
+                    continue
+                if char == "\x1b":
+                    sequence = console_in.read(2)
+                    if sequence == "[D" and cursor > 0:
+                        cursor -= 1
+                        redraw()
+                    elif sequence == "[C" and cursor < len(buffer):
+                        cursor += 1
+                        redraw()
+                    continue
+                if char >= " ":
+                    buffer.insert(cursor, char)
+                    cursor += 1
+                    redraw()
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
 def prompt_text(label: str, default: str | None = None, language: str = "ru") -> str:
     suffix = f" [{default}]" if default else ""
     while True:
@@ -696,8 +796,7 @@ def prompt_path_cancelable(label: str, default: str | None = None, language: str
     print(tr(language, "backup_path_input_hint"))
     suffix = f" [{default}]" if default else ""
     while True:
-        with path_completion_enabled():
-            value = read_prompt_line_with_readline(f"{label}{suffix}: ").strip()
+        value = read_path_line(f"{label}{suffix}: ").strip()
         if is_cancel_input(value):
             raise UserCancelled(tr(language, "action_cancelled"))
         if value:
