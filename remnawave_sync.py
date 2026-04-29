@@ -163,6 +163,7 @@ I18N: dict[str, dict[str, str]] = {
         "telegram_save_anyway": "Telegram test failed. Save settings anyway",
         "telegram_error": "Telegram error: {error}",
         "telegram_not_configured": "Telegram notifications are not configured.",
+        "press_enter": "Press Enter to return to the menu...",
         "update_checking": "Checking for updates...",
         "update_not_installed_from_git": "Installed Git metadata was not found.",
         "update_already_latest": "SyncRemnawave is already on the latest version.",
@@ -291,6 +292,7 @@ I18N: dict[str, dict[str, str]] = {
         "telegram_save_anyway": "Тест Telegram не прошел. Все равно сохранить настройки",
         "telegram_error": "Ошибка Telegram: {error}",
         "telegram_not_configured": "Telegram уведомления не настроены.",
+        "press_enter": "Нажмите Enter, чтобы вернуться в меню...",
         "update_checking": "Проверяю обновления...",
         "update_not_installed_from_git": "Git metadata установленного пакета не найден.",
         "update_already_latest": "Установлена последняя версия SyncRemnawave.",
@@ -645,8 +647,29 @@ def register_ctrl_c() -> None:
     raise ReturnToMainMenu()
 
 
+def clear_screen() -> None:
+    if not sys.stdout.isatty():
+        return
+    if os.name == "nt":
+        os.system("cls")
+    else:
+        sys.stdout.write("\033[2J\033[H")
+        sys.stdout.flush()
+
+
+def pause_for_user(language: str) -> None:
+    try:
+        read_prompt_line(tr(language, "press_enter"))
+    except ReturnToMainMenu:
+        return
+    except UserRequestedExit:
+        raise
+    except SyncError:
+        return
+
+
 def prompt_menu_choice(title: str, options: list[str], language: str) -> int:
-    print()
+    clear_screen()
     print(title)
     for index, option in enumerate(options, start=1):
         print(f"{index}. {option}")
@@ -718,14 +741,18 @@ def quick_toggle_settings(config_file: Path, language: str) -> None:
         if selected == len(options):
             return
         if selected == len(options) - 1:
+            clear_screen()
             run_setup_wizard(config_file)
+            pause_for_user(language)
             continue
 
+        clear_screen()
         env_key, _ = toggles[selected - 1]
         current_value = parse_bool(env_data.get(env_key), False)
         env_data[env_key] = bool_to_env(not current_value)
         write_env_file(config_file, env_data)
         print(tr(language, "quick_settings_saved", path=config_file))
+        pause_for_user(language)
 
 
 def safe_extract_tar(tar: tarfile.TarFile, destination: Path) -> None:
@@ -1184,6 +1211,9 @@ def run_backup_restore_menu(language: str) -> bool:
             language,
         )
         try:
+            if selected == 9:
+                return False
+            clear_screen()
             if selected == 1:
                 manager.create_backup()
             elif selected == 2:
@@ -1201,8 +1231,7 @@ def run_backup_restore_menu(language: str) -> bool:
                 manager.configure_telegram()
             elif selected == 8:
                 manager.configure_retention()
-            else:
-                return False
+            pause_for_user(language)
         except (ReturnToMainMenu, UserRequestedExit):
             raise
         except Exception as exc:
@@ -1213,6 +1242,7 @@ def run_backup_restore_menu(language: str) -> bool:
                 if selected in {1, 2}:
                     manager.send_telegram_message(f"BACKUP/RESTORE FAILED\nError: {exc}", success=False)
                 print(f"ERROR: {exc}")
+            pause_for_user(language)
 
 
 def installed_git_metadata() -> tuple[str, str, str | None]:
@@ -1324,11 +1354,14 @@ def run_interactive_menu(config_file: Path) -> tuple[str, bool]:
             ]
             selected = prompt_menu_choice(tr(language, "menu_title"), options, language)
             if selected == 1:
+                clear_screen()
                 return "sync", False
             if selected == 2:
+                clear_screen()
                 return "sync", True
             if selected == 3:
                 if run_backup_restore_menu(language):
+                    clear_screen()
                     return "sync", False
                 continue
             if selected == 4:
@@ -1339,20 +1372,26 @@ def run_interactive_menu(config_file: Path) -> tuple[str, bool]:
                     language = "ru"
                 continue
             if selected == 5:
+                clear_screen()
                 run_setup_wizard(config_file)
+                pause_for_user(language)
                 env_data = load_existing_env(config_file)
                 language = env_data.get("LANGUAGE", language).strip().lower() if env_data.get("LANGUAGE") else language
                 if language not in {"ru", "en"}:
                     language = "ru"
                 continue
             if selected == 6:
+                clear_screen()
                 if run_self_update(language):
                     return "exit", False
+                pause_for_user(language)
                 continue
             return "exit", False
         except ReturnToMainMenu:
+            clear_screen()
             print()
             print(tr(language, "ctrl_c_return_menu"))
+            pause_for_user(language)
             continue
         except UserRequestedExit:
             print()
