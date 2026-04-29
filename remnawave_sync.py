@@ -43,6 +43,8 @@ CTRL_C_WINDOW_SECONDS = 2.0
 TIME_PATTERN = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 URL_SCHEME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://")
 CTRL_C_TIMES: list[float] = []
+DEFAULT_BACKUP_RETENTION_DAYS = 7
+BACKUP_ARCHIVE_SUFFIXES = (".tar.gz", ".tar.gz.gpg")
 
 I18N: dict[str, dict[str, str]] = {
     "en": {
@@ -115,16 +117,28 @@ I18N: dict[str, dict[str, str]] = {
         "menu_backup_restore": "Backup / restore panel",
         "backup_menu_title": "Backup / restore",
         "backup_create": "Create backup",
+        "backup_create_all": "Create backups for all configured paths",
         "backup_restore": "Restore backup",
         "backup_list": "List backups",
+        "backup_paths": "Configure backup paths",
         "backup_add_s3": "Add S3 account",
         "backup_view_accounts": "View configured backup accounts",
         "backup_delete_s3": "Delete S3 account",
         "backup_set_retention": "Set backup retention",
+        "backup_setup_encryption": "Configure archive password",
         "backup_setup_telegram": "Configure Telegram notifications",
         "backup_accounts_title": "Configured backup accounts",
+        "backup_paths_title": "Configured backup paths",
+        "backup_paths_none": "No backup paths configured.",
+        "backup_add_path": "Add backup path",
+        "backup_delete_path": "Delete backup path",
+        "backup_path_saved": "Backup path saved: {path}",
+        "backup_path_deleted": "Backup path deleted: {path}",
+        "backup_path_select": "Backup path number",
+        "backup_all_done": "All configured path backups completed.",
         "backup_s3_none": "No S3 accounts configured.",
         "backup_telegram_status": "Telegram notifications: {status}",
+        "backup_encryption_status": "Archive password: {status}",
         "backup_retention_status": "Retention: {days}",
         "backup_retention_days": "Delete backups older than N days (0 disables retention)",
         "backup_retention_saved": "Retention saved: {days}",
@@ -158,6 +172,14 @@ I18N: dict[str, dict[str, str]] = {
         "backup_s3_access_denied": "No access to S3 bucket: {bucket}",
         "backup_s3_test_failed": "S3 check failed: {error}",
         "backup_s3_save_anyway": "S3 check failed. Save this account anyway",
+        "backup_encryption_enable": "Enable archive password encryption",
+        "backup_encryption_password": "Archive password",
+        "backup_encryption_confirm": "Confirm archive password",
+        "backup_encryption_mismatch": "Passwords do not match.",
+        "backup_encryption_saved": "Archive password settings saved.",
+        "backup_encrypting": "Encrypting archive...",
+        "backup_decrypting": "Decrypting archive...",
+        "backup_gpg_missing": "GPG is required for password-protected archives. Install gnupg first.",
         "backup_offer_sync": "Backup is older than 24 hours. Start panel sync now",
         "backup_sync_after_restore": "Start panel sync now",
         "telegram_title": "Telegram notification setup",
@@ -252,16 +274,28 @@ I18N: dict[str, dict[str, str]] = {
         "menu_backup_restore": "Бекап / восстановление панели",
         "backup_menu_title": "Бекап / восстановление",
         "backup_create": "Сделать бекап",
+        "backup_create_all": "Сделать бекап всех настроенных путей",
         "backup_restore": "Восстановить из бекапа",
         "backup_list": "Показать список бекапов",
+        "backup_paths": "Настроить пути архивации",
         "backup_add_s3": "Добавить S3 аккаунт",
         "backup_view_accounts": "Показать текущие backup аккаунты",
         "backup_delete_s3": "Удалить S3 аккаунт",
         "backup_set_retention": "Настроить retention бекапов",
+        "backup_setup_encryption": "Настроить пароль архива",
         "backup_setup_telegram": "Настроить Telegram уведомления",
         "backup_accounts_title": "Текущие backup аккаунты",
+        "backup_paths_title": "Настроенные пути архивации",
+        "backup_paths_none": "Пути архивации не настроены.",
+        "backup_add_path": "Добавить путь архивации",
+        "backup_delete_path": "Удалить путь архивации",
+        "backup_path_saved": "Путь архивации сохранен: {path}",
+        "backup_path_deleted": "Путь архивации удален: {path}",
+        "backup_path_select": "Номер пути архивации",
+        "backup_all_done": "Бекапы всех настроенных путей завершены.",
         "backup_s3_none": "S3 аккаунты не настроены.",
         "backup_telegram_status": "Telegram уведомления: {status}",
+        "backup_encryption_status": "Пароль архива: {status}",
         "backup_retention_status": "Retention: {days}",
         "backup_retention_days": "Удалять бекапы старше N дней (0 отключает retention)",
         "backup_retention_saved": "Retention сохранен: {days}",
@@ -295,6 +329,14 @@ I18N: dict[str, dict[str, str]] = {
         "backup_s3_access_denied": "Нет доступа к S3 bucket: {bucket}",
         "backup_s3_test_failed": "Проверка S3 не прошла: {error}",
         "backup_s3_save_anyway": "Проверка S3 не прошла. Все равно сохранить этот аккаунт",
+        "backup_encryption_enable": "Включить шифрование архива паролем",
+        "backup_encryption_password": "Пароль архива",
+        "backup_encryption_confirm": "Подтвердите пароль архива",
+        "backup_encryption_mismatch": "Пароли не совпадают.",
+        "backup_encryption_saved": "Настройки пароля архива сохранены.",
+        "backup_encrypting": "Шифрую архив...",
+        "backup_decrypting": "Расшифровываю архив...",
+        "backup_gpg_missing": "Для архивов с паролем нужен GPG. Сначала установите gnupg.",
         "backup_offer_sync": "Бекап старше 24 часов. Запустить синхронизацию панелей сейчас",
         "backup_sync_after_restore": "Запустить синхронизацию панелей сейчас",
         "telegram_title": "Настройка Telegram уведомлений",
@@ -720,6 +762,19 @@ def normalize_s3_endpoint_url(value: str | None) -> str:
     return f"https://{endpoint}"
 
 
+def is_backup_archive_name(name: str) -> bool:
+    filename = name.rsplit("/", 1)[-1]
+    return filename.endswith(BACKUP_ARCHIVE_SUFFIXES) and (
+        filename.startswith("remnawave_panel_") or filename.startswith("backup_")
+    )
+
+
+def run_gpg(args: list[str], language: str) -> None:
+    if shutil.which("gpg") is None:
+        raise SyncError(tr(language, "backup_gpg_missing"))
+    subprocess.run(args, check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
+
+
 def load_existing_env(path: Path) -> dict[str, str]:
     if not path.exists():
         return {}
@@ -796,15 +851,33 @@ class BackupManager:
             try:
                 data = json.loads(self.config_path.read_text(encoding="utf-8"))
                 if isinstance(data, dict):
+                    panel_path = str(data.get("panel_path") or "/opt/remnawave")
+                    data.setdefault("panel_path", panel_path)
+                    data.setdefault("backup_paths", [panel_path])
+                    data.setdefault("local_backup_dir", str(default_backup_dir()))
+                    data.setdefault("s3_accounts", [])
+                    data.setdefault("telegram", {"bot_token": "", "chat_id": "", "topic_id": ""})
+                    data.setdefault("encryption", {"enabled": False, "password": ""})
+                    data.setdefault("retention_days", DEFAULT_BACKUP_RETENTION_DAYS)
+                    try:
+                        loaded_retention_days = int(data.get("retention_days") or 0)
+                    except (TypeError, ValueError):
+                        loaded_retention_days = 0
+                    if not data.get("retention_configured") and loaded_retention_days <= 0:
+                        data["retention_days"] = DEFAULT_BACKUP_RETENTION_DAYS
+                    data.setdefault("retention_configured", False)
                     return data
             except (OSError, json.JSONDecodeError) as exc:
                 raise SyncError(f"Failed to read backup config {self.config_path}: {exc}") from exc
         return {
             "panel_path": "/opt/remnawave",
+            "backup_paths": ["/opt/remnawave"],
             "local_backup_dir": str(default_backup_dir()),
             "s3_accounts": [],
             "telegram": {"bot_token": "", "chat_id": "", "topic_id": ""},
-            "retention_days": 0,
+            "encryption": {"enabled": False, "password": ""},
+            "retention_days": DEFAULT_BACKUP_RETENTION_DAYS,
+            "retention_configured": False,
         }
 
     def _save_config(self) -> None:
@@ -850,6 +923,78 @@ class BackupManager:
             else:
                 print(tr(self.language, "backup_s3_test_failed", error=exc))
             return False
+
+    def encryption_config(self) -> dict[str, Any]:
+        encryption = self.config.get("encryption", {})
+        return encryption if isinstance(encryption, dict) else {"enabled": False, "password": ""}
+
+    def encryption_enabled(self) -> bool:
+        encryption = self.encryption_config()
+        return bool(encryption.get("enabled") and encryption.get("password"))
+
+    def encrypt_file(self, archive_path: Path) -> Path:
+        encryption = self.encryption_config()
+        password = str(encryption.get("password") or "")
+        if not password:
+            return archive_path
+        encrypted_path = archive_path.with_name(f"{archive_path.name}.gpg")
+        print(tr(self.language, "backup_encrypting"))
+        run_gpg(
+            [
+                "gpg",
+                "--symmetric",
+                "--batch",
+                "--yes",
+                "--passphrase",
+                password,
+                "-o",
+                str(encrypted_path),
+                str(archive_path),
+            ],
+            self.language,
+        )
+        archive_path.unlink(missing_ok=True)
+        return encrypted_path
+
+    def decrypt_file(self, encrypted_path: Path) -> Path:
+        encryption = self.encryption_config()
+        password = str(encryption.get("password") or "")
+        if not password:
+            password = prompt_secret_cancelable(tr(self.language, "backup_encryption_password"), language=self.language)
+        decrypted_path = Path(tempfile.gettempdir()) / encrypted_path.name.removesuffix(".gpg")
+        print(tr(self.language, "backup_decrypting"))
+        run_gpg(
+            [
+                "gpg",
+                "--decrypt",
+                "--batch",
+                "--yes",
+                "--passphrase",
+                password,
+                "-o",
+                str(decrypted_path),
+                str(encrypted_path),
+            ],
+            self.language,
+        )
+        return decrypted_path
+
+    def configure_encryption(self) -> None:
+        enabled = prompt_bool(tr(self.language, "backup_encryption_enable"), self.encryption_enabled(), self.language)
+        if not enabled:
+            self.config["encryption"] = {"enabled": False, "password": ""}
+            self._save_config()
+            print(tr(self.language, "backup_encryption_saved"))
+            return
+
+        password = prompt_secret_cancelable(tr(self.language, "backup_encryption_password"), language=self.language)
+        confirm = prompt_secret_cancelable(tr(self.language, "backup_encryption_confirm"), language=self.language)
+        if password != confirm:
+            print(tr(self.language, "backup_encryption_mismatch"))
+            return
+        self.config["encryption"] = {"enabled": True, "password": password}
+        self._save_config()
+        print(tr(self.language, "backup_encryption_saved"))
 
     def _telegram_payload(self, text: str, success: bool = True) -> dict[str, Any] | None:
         telegram = self.config.get("telegram", {})
@@ -958,13 +1103,16 @@ class BackupManager:
 
     def retention_days(self) -> int:
         try:
+            if "retention_days" not in self.config:
+                return DEFAULT_BACKUP_RETENTION_DAYS
             return max(0, int(self.config.get("retention_days") or 0))
         except (TypeError, ValueError):
-            return 0
+            return DEFAULT_BACKUP_RETENTION_DAYS
 
     def configure_retention(self) -> None:
         days = prompt_int_cancelable(tr(self.language, "backup_retention_days"), self.retention_days(), self.language)
         self.config["retention_days"] = max(0, days)
+        self.config["retention_configured"] = True
         self._save_config()
         status = tr(self.language, "backup_retention_disabled") if days <= 0 else f"{days} days"
         print(tr(self.language, "backup_retention_saved", days=status))
@@ -984,13 +1132,88 @@ class BackupManager:
         else:
             print(tr(self.language, "backup_s3_none"))
 
+        paths = self.configured_backup_paths()
+        print()
+        print(tr(self.language, "backup_paths_title"))
+        if paths:
+            for index, path in enumerate(paths, start=1):
+                print(f"{index}. {path}")
+        else:
+            print(tr(self.language, "backup_paths_none"))
+
         telegram = self.config.get("telegram", {})
         telegram_enabled = isinstance(telegram, dict) and bool(telegram.get("bot_token")) and bool(telegram.get("chat_id"))
         print(tr(self.language, "backup_telegram_status", status=tr(self.language, "setting_on") if telegram_enabled else tr(self.language, "setting_off")))
 
+        print(tr(self.language, "backup_encryption_status", status=tr(self.language, "setting_on") if self.encryption_enabled() else tr(self.language, "setting_off")))
+
         retention = self.retention_days()
         retention_status = tr(self.language, "backup_retention_disabled") if retention <= 0 else f"{retention} days"
         print(tr(self.language, "backup_retention_status", days=retention_status))
+
+    def configured_backup_paths(self) -> list[str]:
+        paths = self.config.get("backup_paths")
+        if isinstance(paths, list):
+            normalized = [str(path).strip() for path in paths if str(path).strip()]
+            if normalized:
+                return normalized
+        panel_path = str(self.config.get("panel_path") or "/opt/remnawave")
+        self.config["backup_paths"] = [panel_path]
+        return [panel_path]
+
+    def configure_backup_paths(self) -> None:
+        while True:
+            paths = self.configured_backup_paths()
+            options = [tr(self.language, "backup_add_path")]
+            if paths:
+                options.append(tr(self.language, "backup_delete_path"))
+            options.append(tr(self.language, "menu_back"))
+
+            path_lines = "\n".join(f"{index}. {path}" for index, path in enumerate(paths, start=1))
+            title = tr(self.language, "backup_paths_title")
+            if path_lines:
+                title = f"{title}\n{path_lines}"
+            selected = prompt_menu_choice(title, options, self.language)
+            if selected == len(options):
+                self._save_config()
+                return
+            if selected == 1:
+                raw_path = prompt_text_cancelable(tr(self.language, "backup_panel_path"), "/opt/remnawave", self.language)
+                path = str(Path(raw_path).expanduser())
+                if not Path(path).exists():
+                    raise SyncError(f"Backup path does not exist: {path}")
+                if path not in paths:
+                    paths.append(path)
+                    self.config["backup_paths"] = paths
+                    self.config["panel_path"] = paths[0]
+                    self._save_config()
+                print(tr(self.language, "backup_path_saved", path=path))
+                pause_for_user(self.language)
+                continue
+
+            selected_path = prompt_int_cancelable(tr(self.language, "backup_path_select"), 1, self.language)
+            if selected_path < 1 or selected_path > len(paths):
+                print(tr(self.language, "menu_invalid"))
+                pause_for_user(self.language)
+                continue
+            removed = paths.pop(selected_path - 1)
+            self.config["backup_paths"] = paths
+            if paths:
+                self.config["panel_path"] = paths[0]
+            self._save_config()
+            print(tr(self.language, "backup_path_deleted", path=removed))
+            pause_for_user(self.language)
+
+    def choose_backup_path(self) -> Path:
+        paths = self.configured_backup_paths()
+        if len(paths) == 1:
+            return Path(paths[0]).expanduser()
+        for index, path in enumerate(paths, start=1):
+            print(f"{index}. {path}")
+        selected = prompt_int_cancelable(tr(self.language, "backup_path_select"), 1, self.language)
+        if selected < 1 or selected > len(paths):
+            raise UserCancelled(tr(self.language, "action_cancelled"))
+        return Path(paths[selected - 1]).expanduser()
 
     def select_s3_account(self) -> Mapping[str, str] | None:
         accounts = self.config.get("s3_accounts", [])
@@ -1038,7 +1261,9 @@ class BackupManager:
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         backup_dir = Path(self.config.get("local_backup_dir") or str(default_backup_dir())).expanduser()
         if backup_dir.exists():
-            for path in backup_dir.glob("remnawave_panel_*.tar.gz"):
+            for path in backup_dir.iterdir():
+                if not path.is_file() or not is_backup_archive_name(path.name):
+                    continue
                 modified = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
                 if modified < cutoff:
                     try:
@@ -1054,7 +1279,7 @@ class BackupManager:
                 for obj in response.get("Contents", []) or []:
                     key = obj.get("Key")
                     last_modified = obj.get("LastModified")
-                    if not isinstance(key, str) or "remnawave_panel_" not in key or not key.endswith(".tar.gz"):
+                    if not isinstance(key, str) or not is_backup_archive_name(key):
                         continue
                     if last_modified and getattr(last_modified, "tzinfo", None) is None:
                         last_modified = last_modified.replace(tzinfo=timezone.utc)
@@ -1071,46 +1296,50 @@ class BackupManager:
         self._save_config()
         return panel_path
 
-    def create_backup(self) -> Path:
-        panel_path = self.ask_panel_path()
-        if not panel_path.exists() or not panel_path.is_dir():
-            raise SyncError(f"Panel path does not exist or is not a directory: {panel_path}")
+    def create_backup(self, source_path: Path | None = None) -> Path:
+        source_path = source_path or self.choose_backup_path()
+        if not source_path.exists() or not source_path.is_dir():
+            raise SyncError(f"Backup path does not exist or is not a directory: {source_path}")
 
         backup_dir = Path(self.config.get("local_backup_dir") or str(default_backup_dir())).expanduser()
         backup_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        archive_path = backup_dir / f"remnawave_panel_{timestamp}.tar.gz"
+        folder_name = source_path.name or "root"
+        archive_path = backup_dir / f"backup_{folder_name}_{timestamp}.tar.gz"
         metadata = {
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "panel_path": str(panel_path),
-            "backup_kind": "panel_directory",
+            "panel_path": str(source_path),
+            "backup_kind": "directory",
+            "source_path": str(source_path),
+            "encrypted": self.encryption_enabled(),
             "tool": APP_NAME,
         }
 
         with tarfile.open(archive_path, "w:gz") as tar:
-            tar.add(panel_path, arcname=panel_path.name)
+            tar.add(source_path, arcname=folder_name)
             metadata_bytes = json.dumps(metadata, ensure_ascii=True, indent=2).encode("utf-8")
             info = tarfile.TarInfo("backup_meta.json")
             info.size = len(metadata_bytes)
             info.mtime = int(datetime.now(timezone.utc).timestamp())
             tar.addfile(info, fileobj=io.BytesIO(metadata_bytes))
 
-        print(tr(self.language, "backup_created", path=archive_path))
+        final_archive = self.encrypt_file(archive_path) if self.encryption_enabled() else archive_path
+        print(tr(self.language, "backup_created", path=final_archive))
         accounts = self.config.get("s3_accounts", [])
         if not accounts:
             print(tr(self.language, "backup_local_only"))
-            self.send_telegram_message(f"BACKUP SUCCESS\nPath: {panel_path}\nFile: {archive_path.name}\nStorage: local only", success=True)
+            self.send_telegram_message(f"BACKUP SUCCESS\nPath: {source_path}\nFile: {final_archive.name}\nStorage: local only", success=True)
             self.apply_retention()
-            return archive_path
+            return final_archive
 
         upload_errors: list[str] = []
         upload_successes = 0
         for account in accounts:
             try:
                 key_prefix = str(account.get("prefix") or "").strip("/")
-                key = f"{key_prefix}/{archive_path.name}" if key_prefix else archive_path.name
+                key = f"{key_prefix}/{final_archive.name}" if key_prefix else final_archive.name
                 client = self._s3_client(account)
-                client.upload_file(str(archive_path), account["bucket"], key)
+                client.upload_file(str(final_archive), account["bucket"], key)
                 upload_successes += 1
                 print(tr(self.language, "backup_uploaded", name=account.get("name", "S3")))
             except Exception as exc:
@@ -1119,35 +1348,49 @@ class BackupManager:
         if upload_errors:
             self.send_telegram_message(
                 "BACKUP PARTIAL FAIL\n"
-                f"Path: {panel_path}\n"
-                f"File: {archive_path.name}\n"
+                f"Path: {source_path}\n"
+                f"File: {final_archive.name}\n"
                 f"Uploaded: {upload_successes}/{len(accounts)}\n"
                 f"Errors: {'; '.join(upload_errors)}",
                 success=False,
             )
         else:
             self.send_telegram_message(
-                f"BACKUP SUCCESS\nPath: {panel_path}\nFile: {archive_path.name}\nS3 accounts: {len(accounts)}",
+                f"BACKUP SUCCESS\nPath: {source_path}\nFile: {final_archive.name}\nS3 accounts: {len(accounts)}",
                 success=True,
             )
         self.apply_retention()
-        return archive_path
+        return final_archive
+
+    def create_all_backups(self) -> None:
+        paths = self.configured_backup_paths()
+        if not paths:
+            print(tr(self.language, "backup_paths_none"))
+            return
+        for index, raw_path in enumerate(paths, start=1):
+            print(f"[{index}/{len(paths)}] {raw_path}")
+            self.create_backup(Path(raw_path).expanduser())
+        print(tr(self.language, "backup_all_done"))
 
     def list_backups(self) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         backup_dir = Path(self.config.get("local_backup_dir") or str(default_backup_dir())).expanduser()
         if backup_dir.exists():
-            for path in sorted(backup_dir.glob("remnawave_panel_*.tar.gz"), reverse=True):
-                items.append({"source": "local", "path": path, "name": path.name, "mtime": path.stat().st_mtime})
+            for path in sorted((item for item in backup_dir.iterdir() if item.is_file() and is_backup_archive_name(item.name)), reverse=True):
+                stat = path.stat()
+                items.append({"source": "local", "path": path, "name": path.name, "mtime": stat.st_mtime, "size": stat.st_size})
 
         for account_index, account in enumerate(self.config.get("s3_accounts", [])):
             try:
                 client = self._s3_client(account)
                 prefix = str(account.get("prefix") or "").strip("/")
-                response = client.list_objects_v2(Bucket=account["bucket"], Prefix=f"{prefix}/" if prefix else "")
-                for obj in response.get("Contents", []) or []:
-                    key = obj.get("Key")
-                    if isinstance(key, str) and key.endswith(".tar.gz") and "remnawave_panel_" in key:
+                list_kwargs = {"Bucket": account["bucket"], "Prefix": f"{prefix}/" if prefix else ""}
+                while True:
+                    response = client.list_objects_v2(**list_kwargs)
+                    for obj in response.get("Contents", []) or []:
+                        key = obj.get("Key")
+                        if not isinstance(key, str) or not is_backup_archive_name(key):
+                            continue
                         items.append(
                             {
                                 "source": "s3",
@@ -1156,8 +1399,15 @@ class BackupManager:
                                 "key": key,
                                 "name": key.rsplit("/", 1)[-1],
                                 "mtime": obj.get("LastModified").timestamp() if obj.get("LastModified") else 0,
+                                "size": obj.get("Size", 0),
                             }
                         )
+                    if not response.get("IsTruncated"):
+                        break
+                    token = response.get("NextContinuationToken")
+                    if not token:
+                        break
+                    list_kwargs["ContinuationToken"] = token
             except Exception as exc:
                 LOGGER.warning("failed listing S3 backups for account %s: %s", account.get("name"), exc)
 
@@ -1173,7 +1423,8 @@ class BackupManager:
         for index, item in enumerate(items, start=1):
             source = item["source"]
             location = str(item.get("path") or item.get("key"))
-            print(f"{index}. [{source}] {item['name']} - {location}")
+            size_mb = float(item.get("size") or 0) / (1024 * 1024)
+            print(f"{index}. [{source}] {item['name']} ({size_mb:.2f} MB) - {location}")
         return items
 
     def _download_if_needed(self, item: Mapping[str, Any]) -> Path:
@@ -1222,6 +1473,7 @@ class BackupManager:
             return False
 
         archive_path = self._download_if_needed(items[selected - 1])
+        restore_archive = self.decrypt_file(archive_path) if archive_path.name.endswith(".gpg") else archive_path
         panel_path = self.ask_panel_path()
         overwrite = prompt_bool(tr(self.language, "backup_restore_overwrite"), False, self.language)
         if overwrite:
@@ -1235,10 +1487,10 @@ class BackupManager:
             destination = default_config_dir() / "restores" / datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             destination.mkdir(parents=True, exist_ok=True)
 
-        with tarfile.open(archive_path, "r:gz") as tar:
+        with tarfile.open(restore_archive, "r:gz") as tar:
             safe_extract_tar(tar, destination)
         if overwrite:
-            archive_root_name = self._archive_root_name(archive_path)
+            archive_root_name = self._archive_root_name(restore_archive)
             extracted_root = destination / archive_root_name if archive_root_name else None
             if extracted_root and extracted_root.exists() and extracted_root != panel_path:
                 if panel_path.exists():
@@ -1248,7 +1500,7 @@ class BackupManager:
         print(tr(self.language, "backup_restore_done", path=restore_path))
         self.send_telegram_message(f"RESTORE SUCCESS\nFile: {archive_path.name}\nPath: {restore_path}", success=True)
 
-        age_hours = self._backup_age_hours(archive_path)
+        age_hours = self._backup_age_hours(restore_archive)
         if age_hours is not None and age_hours > 24:
             return prompt_bool(tr(self.language, "backup_offer_sync"), True, self.language)
         return prompt_bool(tr(self.language, "backup_sync_after_restore"), False, self.language)
@@ -1261,12 +1513,15 @@ def run_backup_restore_menu(language: str) -> bool:
             tr(language, "backup_menu_title"),
             [
                 tr(language, "backup_create"),
+                tr(language, "backup_create_all"),
                 tr(language, "backup_restore"),
                 tr(language, "backup_list"),
                 tr(language, "backup_view_accounts"),
+                tr(language, "backup_paths"),
                 tr(language, "backup_add_s3"),
                 tr(language, "backup_delete_s3"),
                 tr(language, "backup_test_s3"),
+                tr(language, "backup_setup_encryption"),
                 tr(language, "backup_setup_telegram"),
                 tr(language, "backup_set_retention"),
                 tr(language, "menu_back"),
@@ -1274,27 +1529,34 @@ def run_backup_restore_menu(language: str) -> bool:
             language,
         )
         try:
-            if selected == 10:
+            if selected == 13:
                 return False
             clear_screen()
             if selected == 1:
                 manager.create_backup()
             elif selected == 2:
+                manager.create_all_backups()
+            elif selected == 3:
                 if manager.restore_backup():
                     return True
-            elif selected == 3:
-                manager.print_backups()
             elif selected == 4:
-                manager.show_accounts()
+                manager.print_backups()
             elif selected == 5:
-                manager.configure_s3_account()
+                manager.show_accounts()
             elif selected == 6:
-                manager.delete_s3_account()
+                manager.configure_backup_paths()
+                continue
             elif selected == 7:
-                manager.test_configured_s3_account()
+                manager.configure_s3_account()
             elif selected == 8:
-                manager.configure_telegram()
+                manager.delete_s3_account()
             elif selected == 9:
+                manager.test_configured_s3_account()
+            elif selected == 10:
+                manager.configure_encryption()
+            elif selected == 11:
+                manager.configure_telegram()
+            elif selected == 12:
                 manager.configure_retention()
             pause_for_user(language)
         except (ReturnToMainMenu, UserRequestedExit):
@@ -1304,7 +1566,7 @@ def run_backup_restore_menu(language: str) -> bool:
                 print(tr(language, "action_cancelled"))
             else:
                 LOGGER.exception("backup/restore action failed: %s", exc)
-                if selected in {1, 2}:
+                if selected in {1, 2, 3}:
                     manager.send_telegram_message(f"BACKUP/RESTORE FAILED\nError: {exc}", success=False)
                 print(f"ERROR: {exc}")
             pause_for_user(language)

@@ -123,13 +123,13 @@ remnasync
 
 Choose `Backup / restore panel`.
 
-The backup tool will ask for the Remnawave panel directory. The default path is:
+The backup tool can archive one path or all configured paths. The default path is:
 
 ```text
 /opt/remnawave
 ```
 
-You can keep the default or enter a custom path. Backups are saved locally by default:
+You can keep the default, enter a custom path, or use `Configure backup paths` to maintain a list of paths. Backups are saved locally by default:
 
 ```text
 ~/.config/SyncRemnawave/backups
@@ -144,7 +144,13 @@ You can also add one or more S3-compatible accounts from the same menu. For S3 y
 - access key
 - secret key
 
-While entering backup settings, type `q`, `back`, or `exit` to cancel and return to the menu. The backup menu also lets you view configured accounts, delete S3 accounts, and set a retention period for old local/S3 backups. Retention is disabled by default; set it to `0` to keep it disabled.
+While entering backup settings, type `q`, `back`, or `exit` to cancel and return to the menu. The backup menu also lets you view configured accounts, delete S3 accounts, configure archive paths, set an optional archive password, and set a retention period for old local/S3 backups. Retention is `7` days by default; set it to `0` to disable automatic cleanup.
+
+Password-protected archives use GPG symmetric encryption and are saved as `.tar.gz.gpg`. Install `gnupg` first if you want this option:
+
+```bash
+sudo apt install gnupg
+```
 
 When you add an S3 account, SyncRemnawave checks bucket access with `head_bucket`. If the check fails, you can either cancel saving or save the account anyway. The backup menu also has a separate S3 access check for already saved accounts.
 
@@ -164,7 +170,7 @@ S3 settings are stored in:
 
 S3 and Telegram settings are stored in the same file. It is created with owner-only permissions where the operating system supports it.
 
-During restore you can either extract the backup into a safe restore folder or restore directly into the panel path. Direct restore first moves the existing panel directory aside to a `.pre_restore_YYYYMMDD_HHMMSS` folder. After backup or restore, Telegram notifications are sent when configured. After restore, the app can immediately start panel synchronization, and it will suggest doing that automatically when the backup is older than 24 hours.
+The backup list shows SyncRemnawave archives and compatible `BackupResotoreS3` archives from both local storage and S3, including encrypted `.tar.gz.gpg` files. During restore you can either extract the backup into a safe restore folder or restore directly into the panel path. Direct restore first moves the existing panel directory aside to a `.pre_restore_YYYYMMDD_HHMMSS` folder. After backup or restore, Telegram notifications are sent when configured. After restore, the app can immediately start panel synchronization, and it will suggest doing that automatically when the backup is older than 24 hours.
 
 ### Updating The App
 
@@ -357,13 +363,13 @@ remnasync
 
 Выберите `Бекап / восстановление панели`.
 
-Бекапер спросит путь к папке панели Remnawave. Стандартный путь:
+Бекапер может архивировать один путь или все настроенные пути. Стандартный путь:
 
 ```text
 /opt/remnawave
 ```
 
-Можно оставить стандартный путь или указать свой. По умолчанию бекапы сохраняются локально:
+Можно оставить стандартный путь, указать свой или через пункт `Настроить пути архивации` вести список нескольких путей. По умолчанию бекапы сохраняются локально:
 
 ```text
 ~/.config/SyncRemnawave/backups
@@ -378,7 +384,13 @@ remnasync
 - access key
 - secret key
 
-Во время ввода backup-настроек можно ввести `q`, `й`, `back` или `exit`, чтобы отменить действие и вернуться в меню. В меню бекапера также можно посмотреть текущие аккаунты, удалить S3 аккаунт и настроить retention для старых локальных/S3 бекапов. Retention по умолчанию отключен; значение `0` оставляет его выключенным.
+Во время ввода backup-настроек можно ввести `q`, `й`, `back` или `exit`, чтобы отменить действие и вернуться в меню. В меню бекапера также можно посмотреть текущие аккаунты, удалить S3 аккаунт, настроить пути архивации, включить пароль архива и настроить retention для старых локальных/S3 бекапов. Retention по умолчанию `7` дней; значение `0` отключает автоматическую очистку.
+
+Архивы с паролем используют симметричное GPG-шифрование и сохраняются как `.tar.gz.gpg`. Если хотите включить пароль, сначала установите `gnupg`:
+
+```bash
+sudo apt install gnupg
+```
 
 При добавлении S3 аккаунта SyncRemnawave проверяет доступ к bucket через `head_bucket`. Если проверка не прошла, можно отменить сохранение или сохранить аккаунт всё равно. В меню бекапера также есть отдельная проверка S3 доступности для уже сохранённых аккаунтов.
 
@@ -398,7 +410,7 @@ remnasync
 
 Настройки S3 и Telegram хранятся в одном файле. Файл создаётся с правами только для владельца, если операционная система это поддерживает.
 
-При восстановлении можно распаковать бекап в безопасную отдельную папку или восстановить прямо в путь панели. При прямом восстановлении текущая папка панели сначала переносится в `.pre_restore_YYYYMMDD_HHMMSS`. Если Telegram настроен, после backup или restore программа отправит уведомление. После восстановления программа может сразу запустить синхронизацию панелей, а если бекап старше 24 часов, она предложит это автоматически.
+Список бекапов показывает архивы SyncRemnawave и совместимые архивы `BackupResotoreS3` из локального хранилища и S3, включая зашифрованные `.tar.gz.gpg`. При восстановлении можно распаковать бекап в безопасную отдельную папку или восстановить прямо в путь панели. При прямом восстановлении текущая папка панели сначала переносится в `.pre_restore_YYYYMMDD_HHMMSS`. Если Telegram настроен, после backup или restore программа отправит уведомление. После восстановления программа может сразу запустить синхронизацию панелей, а если бекап старше 24 часов, она предложит это автоматически.
 
 ### Обновление Программы
 
