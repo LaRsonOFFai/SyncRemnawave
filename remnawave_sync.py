@@ -123,7 +123,7 @@ I18N: dict[str, dict[str, str]] = {
         "backup_setup_telegram": "Configure Telegram notifications",
         "backup_accounts_title": "Configured backup accounts",
         "backup_s3_none": "No S3 accounts configured.",
-        "backup_telegram_status": "Telegram: {status}",
+        "backup_telegram_status": "Telegram notifications: {status}",
         "backup_retention_status": "Retention: {days}",
         "backup_retention_days": "Delete backups older than N days (0 disables retention)",
         "backup_retention_saved": "Retention saved: {days}",
@@ -153,7 +153,6 @@ I18N: dict[str, dict[str, str]] = {
         "backup_sync_after_restore": "Start panel sync now",
         "telegram_title": "Telegram notification setup",
         "telegram_token": "BOT_TOKEN from @BotFather (example: 123456789:ABC...)",
-        "telegram_token_preview": "Using BOT_TOKEN: {token}",
         "telegram_token_invalid": "Invalid BOT_TOKEN. Enter the token from @BotFather, not the bot username like @my_bot.",
         "telegram_chat_id": "CHAT_ID or group ID",
         "telegram_topic_id": "TOPIC_ID for forum groups (empty if not needed)",
@@ -252,7 +251,7 @@ I18N: dict[str, dict[str, str]] = {
         "backup_setup_telegram": "Настроить Telegram уведомления",
         "backup_accounts_title": "Текущие backup аккаунты",
         "backup_s3_none": "S3 аккаунты не настроены.",
-        "backup_telegram_status": "Telegram: {status}",
+        "backup_telegram_status": "Telegram уведомления: {status}",
         "backup_retention_status": "Retention: {days}",
         "backup_retention_days": "Удалять бекапы старше N дней (0 отключает retention)",
         "backup_retention_saved": "Retention сохранен: {days}",
@@ -282,7 +281,6 @@ I18N: dict[str, dict[str, str]] = {
         "backup_sync_after_restore": "Запустить синхронизацию панелей сейчас",
         "telegram_title": "Настройка Telegram уведомлений",
         "telegram_token": "BOT_TOKEN от @BotFather (пример: 123456789:ABC...)",
-        "telegram_token_preview": "Используется BOT_TOKEN: {token}",
         "telegram_token_invalid": "Неверный BOT_TOKEN. Введите token от @BotFather, а не username бота вида @my_bot.",
         "telegram_chat_id": "CHAT_ID или ID группы",
         "telegram_topic_id": "TOPIC_ID для форум-группы (пусто, если не нужно)",
@@ -838,10 +836,14 @@ class BackupManager:
         existing = self.config.get("telegram", {})
         existing = existing if isinstance(existing, dict) else {}
         bot_token = validate_telegram_bot_token(
-            prompt_text_cancelable(tr(self.language, "telegram_token"), str(existing.get("bot_token") or "") or None, self.language),
+            prompt_secret_cancelable(
+                tr(self.language, "telegram_token"),
+                has_default=bool(existing.get("bot_token")),
+                language=self.language,
+            )
+            or str(existing.get("bot_token") or ""),
             self.language,
         )
-        print(tr(self.language, "telegram_token_preview", token=bot_token))
         chat_id = prompt_text_cancelable(tr(self.language, "telegram_chat_id"), str(existing.get("chat_id") or "") or None, self.language)
         topic_id = prompt_text_cancelable(tr(self.language, "telegram_topic_id"), str(existing.get("topic_id") or ""), self.language)
 
@@ -911,11 +913,6 @@ class BackupManager:
         telegram = self.config.get("telegram", {})
         telegram_enabled = isinstance(telegram, dict) and bool(telegram.get("bot_token")) and bool(telegram.get("chat_id"))
         print(tr(self.language, "backup_telegram_status", status=tr(self.language, "setting_on") if telegram_enabled else tr(self.language, "setting_off")))
-        if telegram_enabled:
-            print(f"  BOT_TOKEN={telegram.get('bot_token')}")
-            print(f"  CHAT_ID={telegram.get('chat_id')}")
-            if telegram.get("topic_id"):
-                print(f"  TOPIC_ID={telegram.get('topic_id')}")
 
         retention = self.retention_days()
         retention_status = tr(self.language, "backup_retention_disabled") if retention <= 0 else f"{retention} days"
