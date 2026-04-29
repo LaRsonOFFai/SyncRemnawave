@@ -121,7 +121,7 @@ Open the interactive menu:
 remnasync
 ```
 
-Choose `Backup / restore panel`.
+Choose `Backup / restore`.
 
 The backup tool can archive one path or all configured paths. The default path is:
 
@@ -144,7 +144,15 @@ You can also add one or more S3-compatible accounts from the same menu. For S3 y
 - access key
 - secret key
 
-While entering backup settings, type `q`, `back`, or `exit` to cancel and return to the menu. The backup menu also lets you view configured accounts, delete S3 accounts, configure archive paths, set an optional archive password, and set a retention period for old local/S3 backups. Retention is `7` days by default; set it to `0` to disable automatic cleanup.
+While entering backup settings, type `q`, `back`, or `exit` to cancel and return to the menu. The backup menu also lets you view configured accounts, delete S3 accounts, configure archive paths, set an optional archive password, configure automatic backup times, and set a retention period for old local/S3 backups. Retention is `7` days by default; set it to `0` to disable automatic cleanup.
+
+Automatic backups are configured from the same backup menu. Enter one or more times separated by spaces, for example:
+
+```text
+03:00 04:00 12:00 14:00 20:00 23:59
+```
+
+On Linux/macOS, SyncRemnawave writes a separate managed crontab block that runs `remnasync backup`. That command archives all configured backup paths without opening the interactive menu and without starting panel synchronization. Type `off` in the schedule prompt to disable automatic backups and remove the managed cron block.
 
 Password-protected archives use GPG symmetric encryption and are saved as `.tar.gz.gpg`. Install `gnupg` first if you want this option:
 
@@ -170,7 +178,7 @@ S3 settings are stored in:
 
 S3 and Telegram settings are stored in the same file. It is created with owner-only permissions where the operating system supports it.
 
-The backup list shows SyncRemnawave archives and compatible `BackupResotoreS3` archives from both local storage and S3, including encrypted `.tar.gz.gpg` files. During restore you can either extract the backup into a safe restore folder or restore directly into the panel path. Direct restore first moves the existing panel directory aside to a `.pre_restore_YYYYMMDD_HHMMSS` folder. After backup or restore, Telegram notifications are sent when configured. After restore, the app can immediately start panel synchronization, and it will suggest doing that automatically when the backup is older than 24 hours.
+The backup list shows SyncRemnawave archives and compatible `BackupResotoreS3` archives from both local storage and S3, including encrypted `.tar.gz.gpg` files. During restore you can either extract the backup into a safe restore folder or restore directly into the selected path. Direct restore first moves the existing destination directory aside to a `.pre_restore_YYYYMMDD_HHMMSS` folder. After backup or restore, Telegram notifications are sent when configured. After restore, the app can immediately start panel synchronization, and it will suggest doing that automatically when the backup is older than 24 hours.
 
 ### Updating The App
 
@@ -236,7 +244,7 @@ remnasync --dry-run
 - User and node metadata are synced through official metadata endpoints when available
 - Infra billing sync uses the official `infra-billing/providers` and `infra-billing/nodes` API routes
 - Infra billing history records are not mirrored automatically
-- The built-in backup tool archives the panel directory. If your database lives outside that directory, make sure your deployment stores the required data under the selected path or add a separate database dump to your operational backup plan.
+- The built-in backup tool archives the configured paths. If your database lives outside those paths, make sure your deployment stores the required data under one of the selected paths or add a separate database dump to your operational backup plan.
 
 ---
 
@@ -305,7 +313,7 @@ remnasync
 
 - запустить синхронизацию
 - запустить `dry-run`
-- сделать или восстановить бекап панели
+- сделать или восстановить бекап настроенных путей
 - открыть полный мастер настройки
 - быстро переключить сохранённые опции, например включить или выключить синхронизацию nodes
 - проверить обновления программы и установить их
@@ -361,7 +369,7 @@ remnasync init
 remnasync
 ```
 
-Выберите `Бекап / восстановление панели`.
+Выберите `Бекап / восстановление`.
 
 Бекапер может архивировать один путь или все настроенные пути. Стандартный путь:
 
@@ -384,7 +392,15 @@ remnasync
 - access key
 - secret key
 
-Во время ввода backup-настроек можно ввести `q`, `й`, `back` или `exit`, чтобы отменить действие и вернуться в меню. В меню бекапера также можно посмотреть текущие аккаунты, удалить S3 аккаунт, настроить пути архивации, включить пароль архива и настроить retention для старых локальных/S3 бекапов. Retention по умолчанию `7` дней; значение `0` отключает автоматическую очистку.
+Во время ввода backup-настроек можно ввести `q`, `й`, `back` или `exit`, чтобы отменить действие и вернуться в меню. В меню бекапера также можно посмотреть текущие аккаунты, удалить S3 аккаунт, настроить пути архивации, включить пароль архива, настроить авто-бекап и настроить retention для старых локальных/S3 бекапов. Retention по умолчанию `7` дней; значение `0` отключает автоматическую очистку.
+
+Авто-бекап настраивается в этом же меню. Введите одно или несколько значений времени через пробел, например:
+
+```text
+03:00 04:00 12:00 14:00 20:00 23:59
+```
+
+На Linux/macOS SyncRemnawave создаёт отдельный управляемый cron-блок, который запускает `remnasync backup`. Эта команда архивирует все настроенные пути без открытия интерактивного меню и без запуска синхронизации панелей. Чтобы отключить авто-бекап и удалить управляемый cron-блок, введите `off` в поле расписания.
 
 Архивы с паролем используют симметричное GPG-шифрование и сохраняются как `.tar.gz.gpg`. Если хотите включить пароль, сначала установите `gnupg`:
 
@@ -410,7 +426,7 @@ sudo apt install gnupg
 
 Настройки S3 и Telegram хранятся в одном файле. Файл создаётся с правами только для владельца, если операционная система это поддерживает.
 
-Список бекапов показывает архивы SyncRemnawave и совместимые архивы `BackupResotoreS3` из локального хранилища и S3, включая зашифрованные `.tar.gz.gpg`. При восстановлении можно распаковать бекап в безопасную отдельную папку или восстановить прямо в путь панели. При прямом восстановлении текущая папка панели сначала переносится в `.pre_restore_YYYYMMDD_HHMMSS`. Если Telegram настроен, после backup или restore программа отправит уведомление. После восстановления программа может сразу запустить синхронизацию панелей, а если бекап старше 24 часов, она предложит это автоматически.
+Список бекапов показывает архивы SyncRemnawave и совместимые архивы `BackupResotoreS3` из локального хранилища и S3, включая зашифрованные `.tar.gz.gpg`. При восстановлении можно распаковать бекап в безопасную отдельную папку или восстановить прямо в выбранный путь. При прямом восстановлении текущая папка назначения сначала переносится в `.pre_restore_YYYYMMDD_HHMMSS`. Если Telegram настроен, после backup или restore программа отправит уведомление. После восстановления программа может сразу запустить синхронизацию панелей, а если бекап старше 24 часов, она предложит это автоматически.
 
 ### Обновление Программы
 
@@ -476,4 +492,4 @@ remnasync --dry-run
 - Для `users` и `nodes` metadata синхронизируется через официальные endpoints, если они доступны
 - Infra billing синхронизируется через официальные routes `infra-billing/providers` и `infra-billing/nodes`
 - История infra billing платежей автоматически не зеркалируется
-- Встроенный бекапер архивирует папку панели. Если база данных находится вне этой папки, убедитесь, что нужные данные действительно лежат в выбранном пути, или добавьте отдельный dump базы в свой production-план бекапов.
+- Встроенный бекапер архивирует настроенные пути. Если база данных находится вне этих путей, убедитесь, что нужные данные действительно лежат в одном из выбранных путей, или добавьте отдельный dump базы в свой production-план бекапов.

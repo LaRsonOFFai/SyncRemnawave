@@ -114,7 +114,7 @@ I18N: dict[str, dict[str, str]] = {
         "quick_toggle_delete_missing": "Toggle delete missing users",
         "quick_open_wizard": "Open full setup wizard",
         "quick_current_value": "Current value: {value}",
-        "menu_backup_restore": "Backup / restore panel",
+        "menu_backup_restore": "Backup / restore",
         "backup_menu_title": "Backup / restore",
         "backup_create": "Create backup",
         "backup_create_all": "Create backups for all configured paths",
@@ -127,6 +127,7 @@ I18N: dict[str, dict[str, str]] = {
         "backup_set_retention": "Set backup retention",
         "backup_setup_encryption": "Configure archive password",
         "backup_setup_telegram": "Configure Telegram notifications",
+        "backup_setup_schedule": "Configure automatic backups",
         "backup_accounts_title": "Configured backup accounts",
         "backup_paths_title": "Configured backup paths",
         "backup_paths_none": "No backup paths configured.",
@@ -140,19 +141,25 @@ I18N: dict[str, dict[str, str]] = {
         "backup_telegram_status": "Telegram notifications: {status}",
         "backup_encryption_status": "Archive password: {status}",
         "backup_retention_status": "Retention: {days}",
+        "backup_schedule_status": "Automatic backups: {times}",
+        "backup_schedule_times": "Automatic backup times separated by spaces in HH:MM format (type off to disable)",
+        "backup_schedule_saved": "Automatic backup schedule saved: {times}",
+        "backup_schedule_disabled": "disabled",
+        "backup_schedule_installed": "Automatic backup cron schedule installed for: {times}",
+        "backup_schedule_removed": "Automatic backup cron schedule removed.",
         "backup_retention_days": "Delete backups older than N days (0 disables retention)",
         "backup_retention_saved": "Retention saved: {days}",
         "backup_retention_disabled": "disabled",
         "backup_retention_applied": "Retention applied.",
         "backup_delete_s3_select": "S3 account number to delete",
         "backup_s3_deleted": "S3 account deleted: {name}",
-        "backup_panel_path": "Panel path",
+        "backup_panel_path": "Backup path",
         "backup_local_only": "No S3 accounts configured. Backup will be saved locally only.",
         "backup_created": "Backup created: {path}",
         "backup_uploaded": "Uploaded to S3 account: {name}",
         "backup_restore_done": "Restore completed to: {path}",
-        "backup_restore_overwrite": "Restore directly into the panel path",
-        "backup_restore_confirm_overwrite": "Existing panel directory will be moved aside before restore. Continue",
+        "backup_restore_overwrite": "Restore directly into the selected path",
+        "backup_restore_confirm_overwrite": "Existing destination directory will be moved aside before restore. Continue",
         "backup_select": "Select backup number",
         "backup_no_items": "No backups found.",
         "backup_add_s3_title": "Add S3 account",
@@ -271,7 +278,7 @@ I18N: dict[str, dict[str, str]] = {
         "quick_toggle_delete_missing": "Переключить удаление отсутствующих пользователей",
         "quick_open_wizard": "Открыть полный мастер настройки",
         "quick_current_value": "Текущее значение: {value}",
-        "menu_backup_restore": "Бекап / восстановление панели",
+        "menu_backup_restore": "Бекап / восстановление",
         "backup_menu_title": "Бекап / восстановление",
         "backup_create": "Сделать бекап",
         "backup_create_all": "Сделать бекап всех настроенных путей",
@@ -284,6 +291,7 @@ I18N: dict[str, dict[str, str]] = {
         "backup_set_retention": "Настроить retention бекапов",
         "backup_setup_encryption": "Настроить пароль архива",
         "backup_setup_telegram": "Настроить Telegram уведомления",
+        "backup_setup_schedule": "Настроить авто-бекап",
         "backup_accounts_title": "Текущие backup аккаунты",
         "backup_paths_title": "Настроенные пути архивации",
         "backup_paths_none": "Пути архивации не настроены.",
@@ -297,19 +305,25 @@ I18N: dict[str, dict[str, str]] = {
         "backup_telegram_status": "Telegram уведомления: {status}",
         "backup_encryption_status": "Пароль архива: {status}",
         "backup_retention_status": "Retention: {days}",
+        "backup_schedule_status": "Авто-бекап: {times}",
+        "backup_schedule_times": "Время авто-бекапа через пробел в формате ЧЧ:ММ (off отключает авто-бекап)",
+        "backup_schedule_saved": "Расписание авто-бекапа сохранено: {times}",
+        "backup_schedule_disabled": "отключен",
+        "backup_schedule_installed": "Cron авто-бекапа установлен на время: {times}",
+        "backup_schedule_removed": "Cron авто-бекапа удален.",
         "backup_retention_days": "Удалять бекапы старше N дней (0 отключает retention)",
         "backup_retention_saved": "Retention сохранен: {days}",
         "backup_retention_disabled": "отключен",
         "backup_retention_applied": "Retention применен.",
         "backup_delete_s3_select": "Номер S3 аккаунта для удаления",
         "backup_s3_deleted": "S3 аккаунт удален: {name}",
-        "backup_panel_path": "Путь к панели",
+        "backup_panel_path": "Путь архивации",
         "backup_local_only": "S3 аккаунты не настроены. Бекап будет сохранен только локально.",
         "backup_created": "Бекап создан: {path}",
         "backup_uploaded": "Загружено в S3 аккаунт: {name}",
         "backup_restore_done": "Восстановление завершено в: {path}",
-        "backup_restore_overwrite": "Восстановить прямо в путь панели",
-        "backup_restore_confirm_overwrite": "Существующая папка панели будет перенесена в сторону перед восстановлением. Продолжить",
+        "backup_restore_overwrite": "Восстановить прямо в выбранный путь",
+        "backup_restore_confirm_overwrite": "Существующая папка назначения будет перенесена в сторону перед восстановлением. Продолжить",
         "backup_select": "Выберите номер бекапа",
         "backup_no_items": "Бекапы не найдены.",
         "backup_add_s3_title": "Добавление S3 аккаунта",
@@ -841,8 +855,9 @@ def safe_extract_tar(tar: tarfile.TarFile, destination: Path) -> None:
 
 
 class BackupManager:
-    def __init__(self, language: str) -> None:
+    def __init__(self, language: str, sync_config_file: Path | None = None) -> None:
         self.language = language
+        self.sync_config_file = (sync_config_file or default_config_file()).expanduser()
         self.config_path = default_backup_config_file()
         self.config = self._load_config()
 
@@ -858,6 +873,7 @@ class BackupManager:
                     data.setdefault("s3_accounts", [])
                     data.setdefault("telegram", {"bot_token": "", "chat_id": "", "topic_id": ""})
                     data.setdefault("encryption", {"enabled": False, "password": ""})
+                    data.setdefault("backup_times", [])
                     data.setdefault("retention_days", DEFAULT_BACKUP_RETENTION_DAYS)
                     try:
                         loaded_retention_days = int(data.get("retention_days") or 0)
@@ -876,6 +892,7 @@ class BackupManager:
             "s3_accounts": [],
             "telegram": {"bot_token": "", "chat_id": "", "topic_id": ""},
             "encryption": {"enabled": False, "password": ""},
+            "backup_times": [],
             "retention_days": DEFAULT_BACKUP_RETENTION_DAYS,
             "retention_configured": False,
         }
@@ -1109,6 +1126,44 @@ class BackupManager:
         except (TypeError, ValueError):
             return DEFAULT_BACKUP_RETENTION_DAYS
 
+    def backup_times(self) -> list[str]:
+        raw_times = self.config.get("backup_times", [])
+        if isinstance(raw_times, list):
+            raw_value = " ".join(str(item).strip() for item in raw_times if str(item).strip())
+        else:
+            raw_value = str(raw_times or "")
+        try:
+            return normalize_sync_times(raw_value)
+        except ValueError:
+            return []
+
+    def configure_backup_schedule(self) -> None:
+        current_times = self.backup_times()
+        default_text = " ".join(current_times)
+        print(tr(self.language, "input_cancel_hint"))
+        while True:
+            suffix = f" [{default_text}]" if default_text else ""
+            raw_value = read_prompt_line(f"{tr(self.language, 'backup_schedule_times')}{suffix}: ").strip()
+            if is_cancel_input(raw_value):
+                raise UserCancelled(tr(self.language, "action_cancelled"))
+            if not raw_value:
+                times = current_times
+                break
+            if raw_value.lower() in {"0", "-", "off", "none", "disable", "disabled"}:
+                times = []
+                break
+            try:
+                times = normalize_sync_times(raw_value)
+                break
+            except ValueError:
+                print(tr(self.language, "time_invalid"))
+
+        self.config["backup_times"] = times
+        self._save_config()
+        maybe_configure_backup_cron(self.sync_config_file, times, self.language)
+        status = tr(self.language, "backup_schedule_disabled") if not times else ", ".join(times)
+        print(tr(self.language, "backup_schedule_saved", times=status))
+
     def configure_retention(self) -> None:
         days = prompt_int_cancelable(tr(self.language, "backup_retention_days"), self.retention_days(), self.language)
         self.config["retention_days"] = max(0, days)
@@ -1150,6 +1205,9 @@ class BackupManager:
         retention = self.retention_days()
         retention_status = tr(self.language, "backup_retention_disabled") if retention <= 0 else f"{retention} days"
         print(tr(self.language, "backup_retention_status", days=retention_status))
+        backup_times = self.backup_times()
+        backup_schedule_status = tr(self.language, "backup_schedule_disabled") if not backup_times else ", ".join(backup_times)
+        print(tr(self.language, "backup_schedule_status", times=backup_schedule_status))
 
     def configured_backup_paths(self) -> list[str]:
         paths = self.config.get("backup_paths")
@@ -1506,8 +1564,8 @@ class BackupManager:
         return prompt_bool(tr(self.language, "backup_sync_after_restore"), False, self.language)
 
 
-def run_backup_restore_menu(language: str) -> bool:
-    manager = BackupManager(language)
+def run_backup_restore_menu(language: str, config_file: Path | None = None) -> bool:
+    manager = BackupManager(language, config_file)
     while True:
         selected = prompt_menu_choice(
             tr(language, "backup_menu_title"),
@@ -1524,12 +1582,13 @@ def run_backup_restore_menu(language: str) -> bool:
                 tr(language, "backup_setup_encryption"),
                 tr(language, "backup_setup_telegram"),
                 tr(language, "backup_set_retention"),
+                tr(language, "backup_setup_schedule"),
                 tr(language, "menu_back"),
             ],
             language,
         )
         try:
-            if selected == 13:
+            if selected == 14:
                 return False
             clear_screen()
             if selected == 1:
@@ -1558,6 +1617,8 @@ def run_backup_restore_menu(language: str) -> bool:
                 manager.configure_telegram()
             elif selected == 12:
                 manager.configure_retention()
+            elif selected == 13:
+                manager.configure_backup_schedule()
             pause_for_user(language)
         except (ReturnToMainMenu, UserRequestedExit):
             raise
@@ -1687,7 +1748,7 @@ def run_interactive_menu(config_file: Path) -> tuple[str, bool]:
                 clear_screen()
                 return "sync", True
             if selected == 3:
-                if run_backup_restore_menu(language):
+                if run_backup_restore_menu(language, config_file):
                     clear_screen()
                     return "sync", False
                 continue
@@ -1736,7 +1797,24 @@ def cron_command(config_file: Path) -> str:
     return f"{base_command} --config-file {shlex.quote(str(config_file))} >> {shlex.quote(str(log_path))} 2>&1"
 
 
-def update_managed_cron_block(config_file: Path, times: list[str]) -> str:
+def backup_cron_command(config_file: Path) -> str:
+    executable = Path(sys.argv[0]).expanduser()
+    log_path = config_file.parent / "backup-cron.log"
+    if executable.is_absolute() and executable.exists():
+        base_command = shlex.quote(str(executable))
+    else:
+        base_command = f"{shlex.quote(sys.executable)} {shlex.quote(str(Path(__file__).resolve()))}"
+    return f"{base_command} --config-file {shlex.quote(str(config_file))} backup >> {shlex.quote(str(log_path))} 2>&1"
+
+
+def update_managed_cron_block(
+    config_file: Path,
+    times: list[str],
+    *,
+    begin_marker: str = "# BEGIN SyncRemnawave managed schedule",
+    end_marker: str = "# END SyncRemnawave managed schedule",
+    command: str | None = None,
+) -> str:
     if os.name == "nt":
         raise SyncError(tr("en", "cron_skipped_windows"))
 
@@ -1759,8 +1837,6 @@ def update_managed_cron_block(config_file: Path, times: list[str]) -> str:
         else:
             raise SyncError(result.stderr.strip() or "Failed to read current crontab")
 
-    begin_marker = "# BEGIN SyncRemnawave managed schedule"
-    end_marker = "# END SyncRemnawave managed schedule"
     filtered_lines: list[str] = []
     inside_block = False
     for line in existing_lines:
@@ -1774,7 +1850,7 @@ def update_managed_cron_block(config_file: Path, times: list[str]) -> str:
             filtered_lines.append(line)
 
     if times:
-        command = cron_command(config_file)
+        command = command or cron_command(config_file)
         managed_lines = [begin_marker]
         for item in times:
             hour, minute = item.split(":", 1)
@@ -1806,6 +1882,31 @@ def maybe_configure_cron(config_file: Path, times: list[str], language: str) -> 
         print(tr(language, "cron_installed", times=", ".join(times)))
     else:
         print(tr(language, "cron_removed"))
+
+
+def maybe_configure_backup_cron(config_file: Path, times: list[str], language: str) -> None:
+    if os.name == "nt":
+        if times:
+            print(tr(language, "cron_skipped_windows"))
+        return
+
+    try:
+        result = update_managed_cron_block(
+            config_file,
+            times,
+            begin_marker="# BEGIN SyncRemnawave managed backup schedule",
+            end_marker="# END SyncRemnawave managed backup schedule",
+            command=backup_cron_command(config_file),
+        )
+    except (SyncError, subprocess.CalledProcessError) as exc:
+        error_text = getattr(exc, "stderr", None) or str(exc)
+        print(tr(language, "cron_unavailable", error=error_text))
+        return
+
+    if result == "installed":
+        print(tr(language, "backup_schedule_installed", times=", ".join(times)))
+    else:
+        print(tr(language, "backup_schedule_removed"))
 
 
 def print_setup_summary(summary: Mapping[str, str | int | float | bool], config_file: Path, language: str) -> None:
@@ -3315,7 +3416,7 @@ def configure_logging(level: str) -> None:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="One-way Remnawave panel sync")
-    parser.add_argument("command", nargs="?", choices=("sync", "init"), default="sync", help="Run sync or open the interactive setup wizard")
+    parser.add_argument("command", nargs="?", choices=("sync", "init", "backup"), default="sync", help="Run sync, backup, or open the interactive setup wizard")
     parser.add_argument("--config-file", type=str, default=str(default_config_file()), help="Path to the .env config file")
     parser.add_argument("--wizard", action="store_true", help="Run the interactive setup wizard and save configuration")
     parser.add_argument("--dry-run", action="store_true", help="Log planned actions without writing to destination")
@@ -3364,6 +3465,23 @@ def main() -> int:
 
     if args.command == "init" or args.wizard:
         return run_setup_wizard(config_file)
+
+    if args.command == "backup":
+        language = os.getenv("LANGUAGE", "ru").strip().lower()
+        if language not in {"ru", "en"}:
+            language = "ru"
+        configure_logging(os.getenv("LOG_LEVEL", "INFO"))
+        try:
+            BackupManager(language, config_file).create_all_backups()
+            return 0
+        except Exception as exc:
+            LOGGER.exception("automatic backup failed: %s", exc)
+            try:
+                BackupManager(language, config_file).send_telegram_message(f"BACKUP FAILED\nError: {exc}", success=False)
+            except Exception:
+                pass
+            print(f"Backup error: {exc}", file=sys.stderr)
+            return 1
 
     try:
         config = SyncConfig.from_env_and_args(args)
