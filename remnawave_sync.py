@@ -122,6 +122,7 @@ I18N: dict[str, dict[str, str]] = {
         "backup_restore": "Restore backup",
         "backup_list": "List backups",
         "backup_paths": "Configure backup paths",
+        "backup_targets": "Configure path upload destinations",
         "backup_add_s3": "Add S3 account",
         "backup_view_accounts": "View configured backup accounts",
         "backup_delete_s3": "Delete S3 account",
@@ -139,6 +140,13 @@ I18N: dict[str, dict[str, str]] = {
         "backup_path_saved": "Backup path saved: {path}",
         "backup_path_deleted": "Backup path deleted: {path}",
         "backup_path_select": "Backup path number",
+        "backup_targets_title": "Backup upload destinations",
+        "backup_targets_prompt": "S3 accounts for this path (all, 0 for local only, or numbers separated by spaces)",
+        "backup_targets_saved": "Upload destinations saved for: {path}",
+        "backup_targets_all": "all S3 accounts",
+        "backup_targets_local": "local only",
+        "backup_targets_selected": "selected S3 accounts: {accounts}",
+        "backup_upload_plan": "Upload destination for {path}: {destination}",
         "backup_all_done": "All configured path backups completed.",
         "backup_s3_none": "No S3 accounts configured.",
         "backup_telegram_status": "Telegram notifications: {status}",
@@ -157,9 +165,9 @@ I18N: dict[str, dict[str, str]] = {
         "backup_delete_s3_select": "S3 account number to delete",
         "backup_s3_deleted": "S3 account deleted: {name}",
         "backup_panel_path": "Backup path",
-        "backup_local_only": "No S3 accounts configured. Backup will be saved locally only.",
+        "backup_local_only": "No S3 accounts selected. Backup will be saved locally only.",
         "backup_created": "Backup created: {path}",
-        "backup_uploaded": "Uploaded to S3 account: {name}",
+        "backup_uploaded": "Uploaded to S3 account: {name} -> s3://{bucket}/{key}",
         "backup_restore_done": "Restore completed to: {path}",
         "backup_restore_overwrite": "Restore directly into the selected path",
         "backup_restore_confirm_overwrite": "Existing destination directory will be moved aside before restore. Continue",
@@ -288,6 +296,7 @@ I18N: dict[str, dict[str, str]] = {
         "backup_restore": "Восстановить из бекапа",
         "backup_list": "Показать список бекапов",
         "backup_paths": "Настроить пути архивации",
+        "backup_targets": "Настроить куда загружать пути",
         "backup_add_s3": "Добавить S3 аккаунт",
         "backup_view_accounts": "Показать текущие backup аккаунты",
         "backup_delete_s3": "Удалить S3 аккаунт",
@@ -305,6 +314,13 @@ I18N: dict[str, dict[str, str]] = {
         "backup_path_saved": "Путь архивации сохранен: {path}",
         "backup_path_deleted": "Путь архивации удален: {path}",
         "backup_path_select": "Номер пути архивации",
+        "backup_targets_title": "Куда загружаются бекапы",
+        "backup_targets_prompt": "S3 аккаунты для этого пути (all, 0 только локально, или номера через пробел)",
+        "backup_targets_saved": "Назначения загрузки сохранены для: {path}",
+        "backup_targets_all": "все S3 аккаунты",
+        "backup_targets_local": "только локально",
+        "backup_targets_selected": "выбранные S3 аккаунты: {accounts}",
+        "backup_upload_plan": "Куда будет загружен {path}: {destination}",
         "backup_all_done": "Бекапы всех настроенных путей завершены.",
         "backup_s3_none": "S3 аккаунты не настроены.",
         "backup_telegram_status": "Telegram уведомления: {status}",
@@ -323,9 +339,9 @@ I18N: dict[str, dict[str, str]] = {
         "backup_delete_s3_select": "Номер S3 аккаунта для удаления",
         "backup_s3_deleted": "S3 аккаунт удален: {name}",
         "backup_panel_path": "Путь архивации",
-        "backup_local_only": "S3 аккаунты не настроены. Бекап будет сохранен только локально.",
+        "backup_local_only": "S3 аккаунты не выбраны. Бекап будет сохранен только локально.",
         "backup_created": "Бекап создан: {path}",
-        "backup_uploaded": "Загружено в S3 аккаунт: {name}",
+        "backup_uploaded": "Загружено в S3 аккаунт: {name} -> s3://{bucket}/{key}",
         "backup_restore_done": "Восстановление завершено в: {path}",
         "backup_restore_overwrite": "Восстановить прямо в выбранный путь",
         "backup_restore_confirm_overwrite": "Существующая папка назначения будет перенесена в сторону перед восстановлением. Продолжить",
@@ -1046,6 +1062,7 @@ class BackupManager:
                     data.setdefault("backup_paths", [panel_path])
                     data.setdefault("local_backup_dir", str(default_backup_dir()))
                     data.setdefault("s3_accounts", [])
+                    data.setdefault("backup_targets", {})
                     data.setdefault("telegram", {"bot_token": "", "chat_id": "", "topic_id": ""})
                     data.setdefault("encryption", {"enabled": False, "password": ""})
                     data.setdefault("backup_times", [])
@@ -1065,6 +1082,7 @@ class BackupManager:
             "backup_paths": ["/opt/remnawave"],
             "local_backup_dir": str(default_backup_dir()),
             "s3_accounts": [],
+            "backup_targets": {},
             "telegram": {"bot_token": "", "chat_id": "", "topic_id": ""},
             "encryption": {"enabled": False, "password": ""},
             "backup_times": [],
@@ -1115,6 +1133,65 @@ class BackupManager:
             else:
                 print(tr(self.language, "backup_s3_test_failed", error=exc))
             return False
+
+    def s3_accounts(self) -> list[dict[str, Any]]:
+        accounts = self.config.get("s3_accounts", [])
+        return [account for account in accounts if isinstance(account, dict)]
+
+    def account_id(self, account: Mapping[str, Any]) -> str:
+        explicit_id = str(account.get("id") or "").strip()
+        if explicit_id:
+            return explicit_id
+        return "|".join(
+            [
+                str(account.get("name") or "S3"),
+                str(account.get("bucket") or ""),
+                str(account.get("prefix") or ""),
+                normalize_s3_endpoint_url(str(account.get("endpoint_url") or "")),
+            ]
+        )
+
+    def account_label(self, account: Mapping[str, Any]) -> str:
+        name = str(account.get("name") or "S3")
+        bucket = str(account.get("bucket") or "")
+        prefix = str(account.get("prefix") or "").strip("/")
+        suffix = f"/{prefix}" if prefix else ""
+        return f"{name} (s3://{bucket}{suffix})"
+
+    def backup_target_ids(self, backup_path: str) -> list[str] | None:
+        targets = self.config.get("backup_targets", {})
+        if not isinstance(targets, dict):
+            self.config["backup_targets"] = {}
+            return None
+        raw_value = targets.get(backup_path)
+        if raw_value is None:
+            return None
+        if isinstance(raw_value, list):
+            return [str(item) for item in raw_value if str(item).strip()]
+        return None
+
+    def s3_accounts_for_path(self, backup_path: str) -> list[dict[str, Any]]:
+        accounts = self.s3_accounts()
+        target_ids = self.backup_target_ids(backup_path)
+        if target_ids is None:
+            return accounts
+        target_id_set = set(target_ids)
+        return [account for account in accounts if self.account_id(account) in target_id_set]
+
+    def describe_backup_targets(self, backup_path: str) -> str:
+        accounts = self.s3_accounts()
+        if not accounts:
+            return tr(self.language, "backup_targets_local")
+        target_ids = self.backup_target_ids(backup_path)
+        if target_ids is None:
+            return tr(self.language, "backup_targets_all")
+        if not target_ids:
+            return tr(self.language, "backup_targets_local")
+        target_id_set = set(target_ids)
+        labels = [self.account_label(account) for account in accounts if self.account_id(account) in target_id_set]
+        if not labels:
+            return tr(self.language, "backup_targets_local")
+        return tr(self.language, "backup_targets_selected", accounts=", ".join(labels))
 
     def encryption_config(self) -> dict[str, Any]:
         encryption = self.config.get("encryption", {})
@@ -1228,6 +1305,7 @@ class BackupManager:
         print()
         print(tr(self.language, "backup_add_s3_title"))
         account = {
+            "id": f"s3-{int(time.time() * 1000)}",
             "name": prompt_text_cancelable(tr(self.language, "backup_s3_name"), "default", self.language),
             "endpoint_url": normalize_s3_endpoint_url(prompt_text_cancelable(tr(self.language, "backup_s3_endpoint"), "", self.language)),
             "region": prompt_text_cancelable(tr(self.language, "backup_s3_region"), "us-east-1", self.language),
@@ -1350,15 +1428,11 @@ class BackupManager:
     def show_accounts(self) -> None:
         print()
         print(tr(self.language, "backup_accounts_title"))
-        accounts = self.config.get("s3_accounts", [])
+        accounts = self.s3_accounts()
         if accounts:
             for index, account in enumerate(accounts, start=1):
                 endpoint = normalize_s3_endpoint_url(account.get("endpoint_url")) or "AWS"
-                prefix = account.get("prefix") or ""
-                print(
-                    f"{index}. S3 {account.get('name', 'default')} "
-                    f"bucket={account.get('bucket', '')} prefix={prefix} region={account.get('region', '')} endpoint={endpoint}"
-                )
+                print(f"{index}. {self.account_label(account)} region={account.get('region', '')} endpoint={endpoint}")
         else:
             print(tr(self.language, "backup_s3_none"))
 
@@ -1368,6 +1442,7 @@ class BackupManager:
         if paths:
             for index, path in enumerate(paths, start=1):
                 print(f"{index}. {path}")
+                print(f"   -> {self.describe_backup_targets(path)}")
         else:
             print(tr(self.language, "backup_paths_none"))
 
@@ -1402,7 +1477,10 @@ class BackupManager:
                 options.append(tr(self.language, "backup_delete_path"))
             options.append(tr(self.language, "menu_back"))
 
-            path_lines = "\n".join(f"{index}. {path}" for index, path in enumerate(paths, start=1))
+            path_lines = "\n".join(
+                f"{index}. {path}\n   -> {self.describe_backup_targets(path)}"
+                for index, path in enumerate(paths, start=1)
+            )
             title = tr(self.language, "backup_paths_title")
             if path_lines:
                 title = f"{title}\n{path_lines}"
@@ -1433,11 +1511,69 @@ class BackupManager:
                 continue
             removed = paths.pop(selected_path - 1)
             self.config["backup_paths"] = paths
+            targets = self.config.get("backup_targets")
+            if isinstance(targets, dict):
+                targets.pop(removed, None)
             if paths:
                 self.config["panel_path"] = paths[0]
             self._save_config()
             print(tr(self.language, "backup_path_deleted", path=removed))
             pause_for_user(self.language)
+
+    def configure_backup_targets(self) -> None:
+        paths = self.configured_backup_paths()
+        accounts = self.s3_accounts()
+        if not paths:
+            print(tr(self.language, "backup_paths_none"))
+            return
+        if not accounts:
+            print(tr(self.language, "backup_s3_none"))
+            return
+
+        print(tr(self.language, "backup_targets_title"))
+        for index, path in enumerate(paths, start=1):
+            print(f"{index}. {path}")
+            print(f"   -> {self.describe_backup_targets(path)}")
+        selected_path = prompt_int_cancelable(tr(self.language, "backup_path_select"), 1, self.language)
+        if selected_path < 1 or selected_path > len(paths):
+            print(tr(self.language, "menu_invalid"))
+            return
+        backup_path = paths[selected_path - 1]
+
+        print()
+        for index, account in enumerate(accounts, start=1):
+            print(f"{index}. {self.account_label(account)}")
+        print()
+        raw_value = prompt_text_cancelable(tr(self.language, "backup_targets_prompt"), "all", self.language)
+        normalized_value = raw_value.replace(",", " ").strip().lower()
+        targets = self.config.get("backup_targets")
+        if not isinstance(targets, dict):
+            targets = {}
+
+        if normalized_value in {"all", "*", "все"}:
+            targets.pop(backup_path, None)
+        elif normalized_value in {"0", "local", "локально"}:
+            targets[backup_path] = []
+        else:
+            selected_ids: list[str] = []
+            for item in normalized_value.split():
+                try:
+                    selected = int(item)
+                except ValueError:
+                    print(tr(self.language, "menu_invalid"))
+                    return
+                if selected < 1 or selected > len(accounts):
+                    print(tr(self.language, "menu_invalid"))
+                    return
+                account_id = self.account_id(accounts[selected - 1])
+                if account_id not in selected_ids:
+                    selected_ids.append(account_id)
+            targets[backup_path] = selected_ids
+
+        self.config["backup_targets"] = targets
+        self._save_config()
+        print(tr(self.language, "backup_targets_saved", path=backup_path))
+        print(f"-> {self.describe_backup_targets(backup_path)}")
 
     def choose_backup_path(self) -> Path:
         paths = self.configured_backup_paths()
@@ -1450,17 +1586,13 @@ class BackupManager:
             raise UserCancelled(tr(self.language, "action_cancelled"))
         return Path(paths[selected - 1]).expanduser()
 
-    def select_s3_account(self) -> Mapping[str, str] | None:
-        accounts = self.config.get("s3_accounts", [])
+    def select_s3_account(self) -> Mapping[str, Any] | None:
+        accounts = self.s3_accounts()
         if not accounts:
             print(tr(self.language, "backup_s3_none"))
             return None
         for index, account in enumerate(accounts, start=1):
-            endpoint = normalize_s3_endpoint_url(account.get("endpoint_url")) or "AWS"
-            print(
-                f"{index}. S3 {account.get('name', 'default')} "
-                f"bucket={account.get('bucket', '')} region={account.get('region', '')} endpoint={endpoint}"
-            )
+            print(f"{index}. {self.account_label(account)}")
         if len(accounts) == 1:
             return accounts[0]
         selected = prompt_int_cancelable(tr(self.language, "backup_s3_select"), 1, self.language)
@@ -1475,7 +1607,7 @@ class BackupManager:
             self.test_s3_account(account)
 
     def delete_s3_account(self) -> None:
-        accounts = self.config.get("s3_accounts", [])
+        accounts = self.s3_accounts()
         if not accounts:
             print(tr(self.language, "backup_s3_none"))
             return
@@ -1486,6 +1618,12 @@ class BackupManager:
             return
         removed = accounts.pop(selected - 1)
         self.config["s3_accounts"] = accounts
+        removed_id = self.account_id(removed)
+        targets = self.config.get("backup_targets")
+        if isinstance(targets, dict):
+            for path, target_ids in list(targets.items()):
+                if isinstance(target_ids, list):
+                    targets[path] = [item for item in target_ids if item != removed_id]
         self._save_config()
         print(tr(self.language, "backup_s3_deleted", name=removed.get("name", "S3")))
 
@@ -1560,7 +1698,8 @@ class BackupManager:
 
         final_archive = self.encrypt_file(archive_path) if self.encryption_enabled() else archive_path
         print(tr(self.language, "backup_created", path=final_archive))
-        accounts = self.config.get("s3_accounts", [])
+        accounts = self.s3_accounts_for_path(str(source_path))
+        print(tr(self.language, "backup_upload_plan", path=source_path, destination=self.describe_backup_targets(str(source_path))))
         if not accounts:
             print(tr(self.language, "backup_local_only"))
             self.send_telegram_message(f"BACKUP SUCCESS\nPath: {source_path}\nFile: {final_archive.name}\nStorage: local only", success=True)
@@ -1576,7 +1715,7 @@ class BackupManager:
                 client = self._s3_client(account)
                 client.upload_file(str(final_archive), account["bucket"], key)
                 upload_successes += 1
-                print(tr(self.language, "backup_uploaded", name=account.get("name", "S3")))
+                print(tr(self.language, "backup_uploaded", name=account.get("name", "S3"), bucket=account["bucket"], key=key))
             except Exception as exc:
                 LOGGER.exception("failed uploading backup to S3 account %s: %s", account.get("name"), exc)
                 upload_errors.append(f"{account.get('name', 'S3')}: {exc}")
@@ -1753,6 +1892,7 @@ def run_backup_restore_menu(language: str, config_file: Path | None = None) -> b
                 tr(language, "backup_list"),
                 tr(language, "backup_view_accounts"),
                 tr(language, "backup_paths"),
+                tr(language, "backup_targets"),
                 tr(language, "backup_add_s3"),
                 tr(language, "backup_delete_s3"),
                 tr(language, "backup_test_s3"),
@@ -1765,7 +1905,7 @@ def run_backup_restore_menu(language: str, config_file: Path | None = None) -> b
             language,
         )
         try:
-            if selected == 14:
+            if selected == 15:
                 return False
             clear_screen()
             if selected == 1:
@@ -1783,18 +1923,20 @@ def run_backup_restore_menu(language: str, config_file: Path | None = None) -> b
                 manager.configure_backup_paths()
                 continue
             elif selected == 7:
-                manager.configure_s3_account()
+                manager.configure_backup_targets()
             elif selected == 8:
-                manager.delete_s3_account()
+                manager.configure_s3_account()
             elif selected == 9:
-                manager.test_configured_s3_account()
+                manager.delete_s3_account()
             elif selected == 10:
-                manager.configure_encryption()
+                manager.test_configured_s3_account()
             elif selected == 11:
-                manager.configure_telegram()
+                manager.configure_encryption()
             elif selected == 12:
-                manager.configure_retention()
+                manager.configure_telegram()
             elif selected == 13:
+                manager.configure_retention()
+            elif selected == 14:
                 manager.configure_backup_schedule()
             pause_for_user(language)
         except (ReturnToMainMenu, UserRequestedExit):

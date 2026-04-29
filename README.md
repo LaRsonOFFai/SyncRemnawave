@@ -144,7 +144,9 @@ You can also add one or more S3-compatible accounts from the same menu. For S3 y
 - access key
 - secret key
 
-While entering backup settings, type `q`, `back`, or `exit` to cancel and return to the menu. The backup menu also lets you view configured accounts, delete S3 accounts, configure archive paths, set an optional archive password, configure automatic backup times, and set a retention period for old local/S3 backups. Retention is `7` days by default; set it to `0` to disable automatic cleanup.
+After adding paths and S3 accounts, use `Configure path upload destinations` to choose where each path is uploaded. A path can be uploaded to all S3 accounts, only selected S3 accounts, or kept local only. If you do not configure a destination for a path, SyncRemnawave keeps the old compatible behavior and uploads that path to all configured S3 accounts. The backup account view shows each path together with its current destination.
+
+While entering backup settings, type `q`, `back`, or `exit` to cancel and return to the menu. The backup menu also lets you view configured accounts, delete S3 accounts, configure archive paths, configure where each path is uploaded, set an optional archive password, configure automatic backup times, and set a retention period for old local/S3 backups. Retention is `7` days by default; set it to `0` to disable automatic cleanup.
 
 Automatic backups are configured from the same backup menu. Enter one or more times separated by spaces, for example:
 
@@ -392,7 +394,9 @@ remnasync
 - access key
 - secret key
 
-Во время ввода backup-настроек можно ввести `q`, `й`, `back` или `exit`, чтобы отменить действие и вернуться в меню. В меню бекапера также можно посмотреть текущие аккаунты, удалить S3 аккаунт, настроить пути архивации, включить пароль архива, настроить авто-бекап и настроить retention для старых локальных/S3 бекапов. Retention по умолчанию `7` дней; значение `0` отключает автоматическую очистку.
+После добавления путей и S3 аккаунтов откройте пункт `Настроить куда загружать пути`. Для каждого пути можно выбрать загрузку во все S3 аккаунты, только в выбранные S3 аккаунты или оставить бекап только локально. Если для пути ничего не настроено, SyncRemnawave сохраняет совместимое старое поведение и загружает этот путь во все настроенные S3 аккаунты. В просмотре backup аккаунтов каждый путь показывается вместе с текущим назначением загрузки.
+
+Во время ввода backup-настроек можно ввести `q`, `й`, `back` или `exit`, чтобы отменить действие и вернуться в меню. В меню бекапера также можно посмотреть текущие аккаунты, удалить S3 аккаунт, настроить пути архивации, настроить куда загружать каждый путь, включить пароль архива, настроить авто-бекап и настроить retention для старых локальных/S3 бекапов. Retention по умолчанию `7` дней; значение `0` отключает автоматическую очистку.
 
 Авто-бекап настраивается в этом же меню. Введите одно или несколько значений времени через пробел, например:
 
