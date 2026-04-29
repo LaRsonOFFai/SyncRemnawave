@@ -137,7 +137,7 @@ You can keep the default or enter a custom path. Backups are saved locally by de
 
 You can also add one or more S3-compatible accounts from the same menu. For S3 you need:
 
-- endpoint URL, or empty value for AWS
+- endpoint URL, or empty value for AWS. You may enter either `https://s3.example.com` or just `s3.example.com`; SyncRemnawave will add `https://` automatically.
 - region
 - bucket
 - prefix
@@ -369,7 +369,7 @@ remnasync
 
 В этом же меню можно добавить один или несколько S3-compatible аккаунтов. Для S3 нужны:
 
-- endpoint URL, либо пустое значение для AWS
+- endpoint URL, либо пустое значение для AWS. Можно вводить как `https://s3.example.com`, так и просто `s3.example.com`; SyncRemnawave автоматически добавит `https://`.
 - region
 - bucket
 - prefix

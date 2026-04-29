@@ -41,6 +41,7 @@ DEFAULT_REPO_URL = "https://github.com/LaRsonOFFai/SyncRemnawave.git"
 CTRL_C_EXIT_COUNT = 3
 CTRL_C_WINDOW_SECONDS = 2.0
 TIME_PATTERN = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+URL_SCHEME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://")
 CTRL_C_TIMES: list[float] = []
 
 I18N: dict[str, dict[str, str]] = {
@@ -671,6 +672,15 @@ def validate_telegram_bot_token(token: str, language: str = "ru") -> str:
     return token
 
 
+def normalize_s3_endpoint_url(value: str | None) -> str:
+    endpoint = (value or "").strip()
+    if not endpoint:
+        return ""
+    if URL_SCHEME_PATTERN.match(endpoint):
+        return endpoint
+    return f"https://{endpoint}"
+
+
 def load_existing_env(path: Path) -> dict[str, str]:
     if not path.exists():
         return {}
@@ -773,7 +783,7 @@ class BackupManager:
             "aws_secret_access_key": account["secret_key"],
             "region_name": account.get("region") or "us-east-1",
         }
-        endpoint_url = account.get("endpoint_url")
+        endpoint_url = normalize_s3_endpoint_url(account.get("endpoint_url"))
         if endpoint_url:
             kwargs["endpoint_url"] = endpoint_url
         return boto3.client("s3", **kwargs)
@@ -819,7 +829,7 @@ class BackupManager:
         print(tr(self.language, "backup_add_s3_title"))
         account = {
             "name": prompt_text_cancelable(tr(self.language, "backup_s3_name"), "default", self.language),
-            "endpoint_url": prompt_text_cancelable(tr(self.language, "backup_s3_endpoint"), "", self.language),
+            "endpoint_url": normalize_s3_endpoint_url(prompt_text_cancelable(tr(self.language, "backup_s3_endpoint"), "", self.language)),
             "region": prompt_text_cancelable(tr(self.language, "backup_s3_region"), "us-east-1", self.language),
             "bucket": prompt_text_cancelable(tr(self.language, "backup_s3_bucket"), None, self.language),
             "prefix": prompt_text_cancelable(tr(self.language, "backup_s3_prefix"), "syncremnawave", self.language).strip("/"),
@@ -900,7 +910,7 @@ class BackupManager:
         accounts = self.config.get("s3_accounts", [])
         if accounts:
             for index, account in enumerate(accounts, start=1):
-                endpoint = account.get("endpoint_url") or "AWS"
+                endpoint = normalize_s3_endpoint_url(account.get("endpoint_url")) or "AWS"
                 prefix = account.get("prefix") or ""
                 print(
                     f"{index}. S3 {account.get('name', 'default')} "
