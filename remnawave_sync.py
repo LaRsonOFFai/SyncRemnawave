@@ -150,6 +150,14 @@ I18N: dict[str, dict[str, str]] = {
         "backup_s3_access_key": "Access key",
         "backup_s3_secret_key": "Secret key",
         "backup_s3_saved": "S3 account saved.",
+        "backup_test_s3": "Check S3 access",
+        "backup_s3_select": "S3 account number",
+        "backup_s3_testing": "Checking S3 bucket access...",
+        "backup_s3_test_ok": "S3 access OK: bucket={bucket}",
+        "backup_s3_bucket_not_found": "S3 bucket not found: {bucket}",
+        "backup_s3_access_denied": "No access to S3 bucket: {bucket}",
+        "backup_s3_test_failed": "S3 check failed: {error}",
+        "backup_s3_save_anyway": "S3 check failed. Save this account anyway",
         "backup_offer_sync": "Backup is older than 24 hours. Start panel sync now",
         "backup_sync_after_restore": "Start panel sync now",
         "telegram_title": "Telegram notification setup",
@@ -279,6 +287,14 @@ I18N: dict[str, dict[str, str]] = {
         "backup_s3_access_key": "Access key",
         "backup_s3_secret_key": "Secret key",
         "backup_s3_saved": "S3 аккаунт сохранен.",
+        "backup_test_s3": "Проверить S3 доступность",
+        "backup_s3_select": "Номер S3 аккаунта",
+        "backup_s3_testing": "Проверяю доступ к S3 bucket...",
+        "backup_s3_test_ok": "S3 доступ есть: bucket={bucket}",
+        "backup_s3_bucket_not_found": "S3 bucket не найден: {bucket}",
+        "backup_s3_access_denied": "Нет доступа к S3 bucket: {bucket}",
+        "backup_s3_test_failed": "Проверка S3 не прошла: {error}",
+        "backup_s3_save_anyway": "Проверка S3 не прошла. Все равно сохранить этот аккаунт",
         "backup_offer_sync": "Бекап старше 24 часов. Запустить синхронизацию панелей сейчас",
         "backup_sync_after_restore": "Запустить синхронизацию панелей сейчас",
         "telegram_title": "Настройка Telegram уведомлений",
@@ -815,6 +831,26 @@ class BackupManager:
             kwargs["endpoint_url"] = endpoint_url
         return boto3.client("s3", **kwargs)
 
+    def test_s3_account(self, account: Mapping[str, str]) -> bool:
+        bucket = str(account.get("bucket") or "").strip()
+        print(tr(self.language, "backup_s3_testing"))
+        try:
+            client = self._s3_client(account)
+            client.head_bucket(Bucket=bucket)
+            print(tr(self.language, "backup_s3_test_ok", bucket=bucket))
+            return True
+        except Exception as exc:
+            response = getattr(exc, "response", {})
+            error = response.get("Error", {}) if isinstance(response, dict) else {}
+            error_code = str(error.get("Code", "")).strip()
+            if error_code in {"404", "NoSuchBucket", "NotFound"}:
+                print(tr(self.language, "backup_s3_bucket_not_found", bucket=bucket))
+            elif error_code in {"403", "AccessDenied"}:
+                print(tr(self.language, "backup_s3_access_denied", bucket=bucket))
+            else:
+                print(tr(self.language, "backup_s3_test_failed", error=exc))
+            return False
+
     def _telegram_payload(self, text: str, success: bool = True) -> dict[str, Any] | None:
         telegram = self.config.get("telegram", {})
         if not isinstance(telegram, dict):
@@ -863,6 +899,8 @@ class BackupManager:
             "access_key": prompt_secret_cancelable(tr(self.language, "backup_s3_access_key"), language=self.language),
             "secret_key": prompt_secret_cancelable(tr(self.language, "backup_s3_secret_key"), language=self.language),
         }
+        if not self.test_s3_account(account) and not prompt_bool(tr(self.language, "backup_s3_save_anyway"), False, self.language):
+            return
         self.config.setdefault("s3_accounts", []).append(account)
         self._save_config()
         print(tr(self.language, "backup_s3_saved"))
@@ -953,6 +991,30 @@ class BackupManager:
         retention = self.retention_days()
         retention_status = tr(self.language, "backup_retention_disabled") if retention <= 0 else f"{retention} days"
         print(tr(self.language, "backup_retention_status", days=retention_status))
+
+    def select_s3_account(self) -> Mapping[str, str] | None:
+        accounts = self.config.get("s3_accounts", [])
+        if not accounts:
+            print(tr(self.language, "backup_s3_none"))
+            return None
+        for index, account in enumerate(accounts, start=1):
+            endpoint = normalize_s3_endpoint_url(account.get("endpoint_url")) or "AWS"
+            print(
+                f"{index}. S3 {account.get('name', 'default')} "
+                f"bucket={account.get('bucket', '')} region={account.get('region', '')} endpoint={endpoint}"
+            )
+        if len(accounts) == 1:
+            return accounts[0]
+        selected = prompt_int_cancelable(tr(self.language, "backup_s3_select"), 1, self.language)
+        if selected < 1 or selected > len(accounts):
+            print(tr(self.language, "menu_invalid"))
+            return None
+        return accounts[selected - 1]
+
+    def test_configured_s3_account(self) -> None:
+        account = self.select_s3_account()
+        if account is not None:
+            self.test_s3_account(account)
 
     def delete_s3_account(self) -> None:
         accounts = self.config.get("s3_accounts", [])
@@ -1204,6 +1266,7 @@ def run_backup_restore_menu(language: str) -> bool:
                 tr(language, "backup_view_accounts"),
                 tr(language, "backup_add_s3"),
                 tr(language, "backup_delete_s3"),
+                tr(language, "backup_test_s3"),
                 tr(language, "backup_setup_telegram"),
                 tr(language, "backup_set_retention"),
                 tr(language, "menu_back"),
@@ -1211,7 +1274,7 @@ def run_backup_restore_menu(language: str) -> bool:
             language,
         )
         try:
-            if selected == 9:
+            if selected == 10:
                 return False
             clear_screen()
             if selected == 1:
@@ -1228,8 +1291,10 @@ def run_backup_restore_menu(language: str) -> bool:
             elif selected == 6:
                 manager.delete_s3_account()
             elif selected == 7:
-                manager.configure_telegram()
+                manager.test_configured_s3_account()
             elif selected == 8:
+                manager.configure_telegram()
+            elif selected == 9:
                 manager.configure_retention()
             pause_for_user(language)
         except (ReturnToMainMenu, UserRequestedExit):

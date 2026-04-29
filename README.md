@@ -146,6 +146,8 @@ You can also add one or more S3-compatible accounts from the same menu. For S3 y
 
 While entering backup settings, type `q`, `back`, or `exit` to cancel and return to the menu. The backup menu also lets you view configured accounts, delete S3 accounts, and set a retention period for old local/S3 backups. Retention is disabled by default; set it to `0` to keep it disabled.
 
+When you add an S3 account, SyncRemnawave checks bucket access with `head_bucket`. If the check fails, you can either cancel saving or save the account anyway. The backup menu also has a separate S3 access check for already saved accounts.
+
 The same backup menu can configure Telegram notifications. You need:
 
 - `BOT_TOKEN` from `@BotFather`, for example `123456789:ABC...`
@@ -377,6 +379,8 @@ remnasync
 - secret key
 
 Во время ввода backup-настроек можно ввести `q`, `й`, `back` или `exit`, чтобы отменить действие и вернуться в меню. В меню бекапера также можно посмотреть текущие аккаунты, удалить S3 аккаунт и настроить retention для старых локальных/S3 бекапов. Retention по умолчанию отключен; значение `0` оставляет его выключенным.
+
+При добавлении S3 аккаунта SyncRemnawave проверяет доступ к bucket через `head_bucket`. Если проверка не прошла, можно отменить сохранение или сохранить аккаунт всё равно. В меню бекапера также есть отдельная проверка S3 доступности для уже сохранённых аккаунтов.
 
 В этом же меню можно настроить Telegram уведомления. Для этого нужны:
 
