@@ -167,7 +167,7 @@ I18N: dict[str, dict[str, str]] = {
         "backup_panel_path": "Backup path",
         "backup_local_only": "No S3 accounts selected. Backup will be saved locally only.",
         "backup_created": "Backup created: {path}",
-        "backup_uploaded": "Uploaded to S3 account: {name} -> s3://{bucket}/{key}",
+        "backup_uploaded": "Uploaded to S3 account: {name} -> s3://{bucket}/{object_key}",
         "backup_restore_done": "Restore completed to: {path}",
         "backup_restore_overwrite": "Restore directly into the selected path",
         "backup_restore_confirm_overwrite": "Existing destination directory will be moved aside before restore. Continue",
@@ -341,7 +341,7 @@ I18N: dict[str, dict[str, str]] = {
         "backup_panel_path": "Путь архивации",
         "backup_local_only": "S3 аккаунты не выбраны. Бекап будет сохранен только локально.",
         "backup_created": "Бекап создан: {path}",
-        "backup_uploaded": "Загружено в S3 аккаунт: {name} -> s3://{bucket}/{key}",
+        "backup_uploaded": "Загружено в S3 аккаунт: {name} -> s3://{bucket}/{object_key}",
         "backup_restore_done": "Восстановление завершено в: {path}",
         "backup_restore_overwrite": "Восстановить прямо в выбранный путь",
         "backup_restore_confirm_overwrite": "Существующая папка назначения будет перенесена в сторону перед восстановлением. Продолжить",
@@ -1715,7 +1715,7 @@ class BackupManager:
                 client = self._s3_client(account)
                 client.upload_file(str(final_archive), account["bucket"], key)
                 upload_successes += 1
-                print(tr(self.language, "backup_uploaded", name=account.get("name", "S3"), bucket=account["bucket"], key=key))
+                print(tr(self.language, "backup_uploaded", name=account.get("name", "S3"), bucket=account["bucket"], object_key=key))
             except Exception as exc:
                 LOGGER.exception("failed uploading backup to S3 account %s: %s", account.get("name"), exc)
                 upload_errors.append(f"{account.get('name', 'S3')}: {exc}")
