@@ -2150,8 +2150,8 @@ def update_managed_cron_block(
     if result.returncode == 0:
         existing_lines = result.stdout.splitlines()
     else:
-        stderr = (result.stderr or "").lower()
-        if "no crontab" in stderr:
+        output = f"{result.stdout or ''}\n{result.stderr or ''}".lower()
+        if "no crontab" in output or (result.returncode == 1 and not output.strip()):
             existing_lines = []
         else:
             raise SyncError(result.stderr.strip() or "Failed to read current crontab")
@@ -2180,7 +2180,24 @@ def update_managed_cron_block(
         filtered_lines.extend(managed_lines)
 
     new_content = "\n".join(filtered_lines).rstrip() + "\n"
-    subprocess.run(["crontab", "-"], input=new_content, text=True, check=True)
+    subprocess.run(["crontab", "-"], input=new_content, text=True, check=True, capture_output=True)
+    verify_result = subprocess.run(
+        ["crontab", "-l"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if verify_result.returncode != 0:
+        verify_output = f"{verify_result.stdout or ''}\n{verify_result.stderr or ''}".lower()
+        if not times and ("no crontab" in verify_output or (verify_result.returncode == 1 and not verify_output.strip())):
+            return "removed"
+        raise SyncError(verify_result.stderr.strip() or "Failed to verify current crontab")
+    verify_lines = verify_result.stdout.splitlines()
+    if times:
+        if begin_marker not in verify_lines or end_marker not in verify_lines:
+            raise SyncError("Managed cron schedule was not found after installation")
+    elif begin_marker in verify_lines or end_marker in verify_lines:
+        raise SyncError("Managed cron schedule was not removed")
     return "installed" if times else "removed"
 
 
