@@ -3807,13 +3807,23 @@ def main() -> int:
         if language not in {"ru", "en"}:
             language = "ru"
         configure_logging(os.getenv("LOG_LEVEL", "INFO"))
+        manager = BackupManager(language, config_file)
         try:
-            BackupManager(language, config_file).create_all_backups()
+            started_at = datetime.now(timezone.utc)
+            manager.create_all_backups()
+            duration_seconds = int((datetime.now(timezone.utc) - started_at).total_seconds())
+            paths = manager.configured_backup_paths()
+            manager.send_telegram_message(
+                "AUTO BACKUP FINISHED\n"
+                f"Paths: {len(paths)}\n"
+                f"Duration: {duration_seconds}s",
+                success=True,
+            )
             return 0
         except Exception as exc:
             LOGGER.exception("automatic backup failed: %s", exc)
             try:
-                BackupManager(language, config_file).send_telegram_message(f"BACKUP FAILED\nError: {exc}", success=False)
+                manager.send_telegram_message(f"AUTO BACKUP FAILED\nError: {exc}", success=False)
             except Exception:
                 pass
             print(f"Backup error: {exc}", file=sys.stderr)
