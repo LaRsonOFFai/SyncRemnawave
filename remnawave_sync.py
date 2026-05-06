@@ -45,6 +45,7 @@ TIME_PATTERN = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 URL_SCHEME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://")
 CTRL_C_TIMES: list[float] = []
 DEFAULT_BACKUP_RETENTION_DAYS = 7
+LOCAL_BACKUPS_TO_KEEP_AFTER_S3_UPLOAD = 3
 BACKUP_ARCHIVE_SUFFIXES = (".tar.gz", ".tar.gz.gpg")
 
 I18N: dict[str, dict[str, str]] = {
@@ -162,6 +163,7 @@ I18N: dict[str, dict[str, str]] = {
         "backup_retention_saved": "Retention saved: {days}",
         "backup_retention_disabled": "disabled",
         "backup_retention_applied": "Retention applied.",
+        "backup_local_rotation_applied": "Local S3 backup rotation applied: kept latest {count} archives.",
         "backup_delete_s3_select": "S3 account number to delete",
         "backup_s3_deleted": "S3 account deleted: {name}",
         "backup_panel_path": "Backup path",
@@ -336,6 +338,7 @@ I18N: dict[str, dict[str, str]] = {
         "backup_retention_saved": "Retention сохранен: {days}",
         "backup_retention_disabled": "отключен",
         "backup_retention_applied": "Retention применен.",
+        "backup_local_rotation_applied": "Локальная ротация S3 бекапов применена: оставлены последние {count} архива.",
         "backup_delete_s3_select": "Номер S3 аккаунта для удаления",
         "backup_s3_deleted": "S3 аккаунт удален: {name}",
         "backup_panel_path": "Путь архивации",
@@ -1662,6 +1665,23 @@ class BackupManager:
                 LOGGER.warning("failed applying S3 retention for account %s: %s", account.get("name"), exc)
         print(tr(self.language, "backup_retention_applied"))
 
+    def apply_local_s3_rotation(self, keep_count: int = LOCAL_BACKUPS_TO_KEEP_AFTER_S3_UPLOAD) -> None:
+        backup_dir = Path(self.config.get("local_backup_dir") or str(default_backup_dir())).expanduser()
+        if keep_count <= 0 or not backup_dir.exists():
+            return
+        archives = sorted(
+            (path for path in backup_dir.iterdir() if path.is_file() and is_backup_archive_name(path.name)),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        for path in archives[keep_count:]:
+            try:
+                path.unlink()
+            except OSError as exc:
+                LOGGER.warning("failed deleting old local S3 backup %s: %s", path, exc)
+        if len(archives) > keep_count:
+            print(tr(self.language, "backup_local_rotation_applied", count=keep_count))
+
     def ask_panel_path(self) -> Path:
         current = self.config.get("panel_path") or "/opt/remnawave"
         panel_path = Path(prompt_path_cancelable(tr(self.language, "backup_panel_path"), str(current), self.language)).expanduser()
@@ -1733,6 +1753,8 @@ class BackupManager:
                 f"BACKUP SUCCESS\nPath: {source_path}\nFile: {final_archive.name}\nS3 accounts: {len(accounts)}",
                 success=True,
             )
+        if upload_successes > 0:
+            self.apply_local_s3_rotation()
         self.apply_retention()
         return final_archive
 
